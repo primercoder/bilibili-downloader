@@ -415,7 +415,7 @@ func downloadFile(ctx context.Context, task streamTask, workers int) error {
 	}
 
 	probeCtx, cancelProbe := context.WithTimeout(ctx, 40*time.Second)
-	size, preferred, rangeSupport, err := probe(probeCtx, pool, task.referer)
+	size, _, rangeSupport, err := probe(probeCtx, pool, task.referer)
 	cancelProbe()
 	if err != nil {
 		return err
@@ -655,7 +655,6 @@ func downloadFile(ctx context.Context, task streamTask, workers int) error {
 	}
 	clearResume(key)
 	progress(size, size, 0, "下载完成 · "+pool.summary())
-	_ = preferred
 	return nil
 }
 
