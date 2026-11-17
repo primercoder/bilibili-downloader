@@ -7,30 +7,79 @@
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <header><div class="logo">bili</div><div><h1>Bili 下载器</h1><p>DASH 下载 · FFmpeg 无损合成</p></div><span id="statusDot"></span></header>
+  <header>
+    <div class="logo">bili</div>
+    <div>
+      <h1>Bili 下载器</h1>
+      <p>多线程下载 · 内置合成引擎</p>
+    </div>
+    <span id="statusDot" title="本地助手状态"></span>
+  </header>
+
   <main>
     <section id="loading" class="center">正在读取视频信息…</section>
-    <section id="error" class="error hidden"></section>
+
+    <section id="error" class="hidden">
+      <div id="errorBox" class="result error"></div>
+      <div id="errorHint" class="hint"></div>
+      <button id="retry" class="secondary full" type="button">重试</button>
+    </section>
+
     <section id="form" class="hidden">
       <div id="title" class="title"></div>
       <div id="meta" class="meta"></div>
-      <label>视频清晰度 / 编码<select id="quality"></select></label>
-      <label>音频质量<select id="audio"></select></label>
-      <label>保存位置<div class="path-row"><input id="directory" type="text" spellcheck="false"><button id="browse" class="secondary" type="button">选择…</button></div></label>
+
+      <label id="pageLabel" class="hidden">分 P 选择
+        <select id="pageSelect"></select>
+      </label>
+
+      <label>视频清晰度 / 编码
+        <select id="quality"></select>
+      </label>
+
+      <label>音频质量
+        <select id="audio"></select>
+      </label>
+
+      <label>保存位置
+        <div class="path-row">
+          <input id="directory" type="text" spellcheck="false" placeholder="默认：系统下载目录">
+          <button id="browse" class="secondary" type="button">选择…</button>
+        </div>
+      </label>
       <div id="platformHint" class="hint"></div>
-      <label class="switch-row"><span>保留视频、音频中间文件<small>保留时为 .m4s；关闭时合成后自动清理</small></span><input id="keep" type="checkbox" role="switch"></label>
-      <button id="download" class="primary" type="button">下载并合成</button>
+
+      <label class="switch-row">
+        <span>保留视频、音频中间文件
+          <small>关闭时合成后自动清理（推荐）</small>
+        </span>
+        <input id="keep" type="checkbox" role="switch">
+      </label>
+
+      <button id="download" class="primary" type="button">下载并合成 MP4</button>
     </section>
+
     <section id="progressSection" class="hidden">
-      <div class="progress-title"><span id="stage">准备中</span><span id="percent">0%</span></div>
-      <progress id="progress" max="100" value="0"></progress>
+      <div class="progress-head">
+        <span id="stage">准备中</span>
+        <span id="percent">0%</span>
+      </div>
+      <div class="progress-track"><div id="bar"></div></div>
       <div id="progressDetail" class="hint"></div>
+      <div class="stats">
+        <span>已下载 <b id="doneSize">—</b></span>
+        <span>速度 <b id="speed">—</b></span>
+        <span id="etaWrap">剩余 <b id="eta">—</b></span>
+      </div>
+      <div id="queueNote" class="queue-note hidden"></div>
       <div id="result" class="result hidden"></div>
-      <button id="cancel" class="secondary full" type="button">取消</button>
-      <button id="again" class="primary full hidden" type="button">继续下载其他清晰度</button>
+      <button id="openFolder" class="secondary full hidden" type="button">打开所在文件夹</button>
+      <button id="cancel" class="secondary full" type="button">取消下载</button>
+      <button id="again" class="primary full hidden" type="button">继续下载（回到设置）</button>
     </section>
   </main>
-  <footer>仅下载你有权保存的内容 · 本地处理，不上传视频</footer>
+
+  <footer>仅下载你有权保存的内容 · 全部在本地处理</footer>
   <script src="popup.js" type="module"></script>
 </body>
 </html>
