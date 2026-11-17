@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Bili 下载器</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header><div class="logo">bili</div><div><h1>Bili 下载器</h1><p>DASH 下载 · FFmpeg 无损合成</p></div><span id="statusDot"></span></header>
+  <main>
+    <section id="loading" class="center">正在读取视频信息…</section>
+    <section id="error" class="error hidden"></section>
+    <section id="form" class="hidden">
+      <div id="title" class="title"></div>
+      <div id="meta" class="meta"></div>
+      <label>视频清晰度 / 编码<select id="quality"></select></label>
+      <label>音频质量<select id="audio"></select></label>
+      <label>保存位置<div class="path-row"><input id="directory" type="text" spellcheck="false"><button id="browse" class="secondary" type="button">选择…</button></div></label>
+      <div id="platformHint" class="hint"></div>
+      <label class="switch-row"><span>保留视频、音频中间文件<small>保留时为 .m4s；关闭时合成后自动清理</small></span><input id="keep" type="checkbox" role="switch"></label>
+      <button id="download" class="primary" type="button">下载并合成</button>
+    </section>
+    <section id="progressSection" class="hidden">
+      <div class="progress-title"><span id="stage">准备中</span><span id="percent">0%</span></div>
+      <progress id="progress" max="100" value="0"></progress>
+      <div id="progressDetail" class="hint"></div>
+      <div id="result" class="result hidden"></div>
+      <button id="cancel" class="secondary full" type="button">取消</button>
+      <button id="again" class="primary full hidden" type="button">继续下载其他清晰度</button>
+    </section>
+  </main>
+  <footer>仅下载你有权保存的内容 · 本地处理，不上传视频</footer>
+  <script src="popup.js" type="module"></script>
+</body>
+</html>
