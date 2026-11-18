@@ -1,6 +1,7 @@
-# Batch files must keep CRLF line endings: cmd.exe can mis-handle labels and
-# `call :subroutine` in LF-only files, which is exactly what install.bat uses.
+# Batch and PowerShell files must keep CRLF line endings: cmd.exe and Windows
+# PowerShell 5.1 expect them, and the .ps1 files are stored with a UTF-8 BOM.
 *.bat           text eol=crlf
+*.ps1           text eol=crlf
 
 # Shell scripts and Go sources stay LF.
 *.sh            text eol=lf

@@ -32,9 +32,11 @@
 解压后应该看到：
 
 ```
-bili-downloader-2.0.2-windows-x64\
+bili-downloader-2.0.3-windows-x64\
 ├── install.bat          ← 待会双击这个
+├── install.ps1          ← 安装流程（由 bat 调用）
 ├── uninstall.bat
+├── uninstall.ps1
 ├── README.md            ← 完整说明
 ├── docs\
 │   ├── usage.md         ← 本文件
@@ -46,20 +48,17 @@ bili-downloader-2.0.2-windows-x64\
 
 **第 2 步：双击 `install.bat`**
 
-会弹出一个黑色窗口，几秒内完成，看到类似下面的输出即为成功：
+会弹出一个交互式窗口，按提示操作：
 
-```
-[1/3] 本地助手已就绪: C:\Users\你\AppData\Local\BiliDownloader\bili-host.exe
-[2/3] 已生成清单: ...\com.opencode.bili_downloader.json
-      扩展 ID: khkbfeoekeinbdgbicojpgfidfihfffc
-[3/3] 本地助手注册完成。
-      - Chrome: 已注册
-      - Edge: 已注册
-```
+1. 脚本自动检测本机浏览器，列出 Chrome、Edge、Brave、Chromium、Vivaldi、
+   Opera、Yandex 等，以及每个浏览器安装后会被改动的文件和注册表项；
+2. 输入编号**多选**浏览器：`all` 全选，`1 3` 或 `1,3` 选多个；
+3. 再次确认安装；
+4. 如果目录里已有旧版本文件，脚本会第二次询问：
+   **覆盖 / 跳过有旧文件的浏览器 / 取消**；
+5. 安装完成后，窗口里会逐个浏览器显示加载扩展的步骤。
 
-按任意键关闭窗口即可。
-
-脚本只做三件事：复制一个 exe 到你的用户目录、写一个 json 清单、在 `HKCU`（当前用户）下加注册表项。如果杀毒软件弹窗，选择「允许」。
+按提示完成后按任意键关闭窗口。如果杀毒软件弹窗，选择「允许」。
 
 **第 3 步：加载扩展**
 
@@ -79,12 +78,12 @@ bili-downloader-2.0.2-windows-x64\
 
 ```bash
 # x86_64
-tar -xzf bili-downloader-2.0.2-linux-x64.tar.gz
-cd bili-downloader-2.0.2-linux-x64
+tar -xzf bili-downloader-2.0.3-linux-x64.tar.gz
+cd bili-downloader-2.0.3-linux-x64
 
 # ARM64
-tar -xzf bili-downloader-2.0.2-linux-arm64.tar.gz
-cd bili-downloader-2.0.2-linux-arm64
+tar -xzf bili-downloader-2.0.3-linux-arm64.tar.gz
+cd bili-downloader-2.0.3-linux-arm64
 ```
 
 **第 2 步：运行安装脚本**
@@ -99,11 +98,8 @@ cd bili-downloader-2.0.2-linux-arm64
 chmod +x install.sh && ./install.sh
 ```
 
-只想先看它改什么、不做实际改动：
-
-```bash
-./install.sh --check
-```
+脚本会先检测浏览器并列出每个浏览器会改动的文件，输入编号**多选**后确认安装；
+如果目标位置已有旧文件，会再次询问**覆盖 / 跳过 / 取消**。不需要任何命令行参数。
 
 **第 3 步：加载扩展**
 
@@ -134,8 +130,8 @@ chmod +x install.sh && ./install.sh
 4. 点 **「下载 MP4」**
 5. 完成后点「打开所在文件夹」查看成品
 
-下载过程中**可以关掉面板**，任务在后台继续；工具栏图标显示**预计剩余时间**，
-合成时显示「合成」，完成后短暂显示 ✓（3 秒）。
+下载过程中**可以关掉面板**，任务在后台继续；工具栏图标显示**下载进度百分比**，
+完成后短暂显示 ✓（3 秒）。
 
 **快捷键**：`Alt+Shift+B` 打开面板（冲突时可在 `chrome://extensions/shortcuts` 修改）。
 
@@ -146,7 +142,7 @@ chmod +x install.sh && ./install.sh
 | 显示 | 含义 | 需要做什么 |
 | --- | --- | --- |
 | 解析下载地址 | 正在探测文件大小和各 CDN 镜像 | 等待 |
-| 下载视频流 / 音频流 | 分片并行下载中，显示速度与剩余时间 | 等待 |
+| 下载视频流 / 音频流 | 分片并行下载中，显示速度与剩余时间；工具栏图标同步显示百分比 | 等待 |
 | 合成 MP4 | 内置引擎重排文件，不重新编码 | 等待，通常 1~2 秒 |
 | 下载完成 | 已校验通过；工具栏图标先显示 ✓，3 秒后恢复普通图标 | 可打开所在文件夹 |
 | 排队中 | 已有任务在跑，本任务会自动开始 | 等待 |
@@ -176,7 +172,9 @@ chmod +x install.sh && ./install.sh
 
 ## 六、卸载
 
-**Windows**：双击 `uninstall.bat`，然后在 `chrome://extensions/` 移除「Bili 下载器」。
+**Windows**：双击 `uninstall.bat`。脚本会检测已注册的浏览器和残留文件，
+让你多选要卸载的浏览器，确认后删除注册表项、清单和助手文件，
+最后提示你到 `chrome://extensions/` 移除「Bili 下载器」。
 
 **Linux**：
 
@@ -184,7 +182,8 @@ chmod +x install.sh && ./install.sh
 ./uninstall.sh
 ```
 
-然后在 `chrome://extensions/` 移除扩展。
+同样会列出浏览器、标出哪些目录里还有安装文件，让你多选后确认卸载。
+然后在 `chrome://extensions/`（或对应浏览器的扩展管理页）移除扩展。
 
 ---
 

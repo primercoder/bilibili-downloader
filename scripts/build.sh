@@ -59,7 +59,7 @@ STAGE=$(mktemp -d)
 DIR_NAME="${NAME}-windows-x64"
 mkdir -p "$STAGE/${DIR_NAME}"
 cp -r extension "$STAGE/${DIR_NAME}/"
-cp install.bat uninstall.bat README.md "$STAGE/${DIR_NAME}/"
+cp install.bat uninstall.bat install.ps1 uninstall.ps1 README.md "$STAGE/${DIR_NAME}/"
 mkdir -p "$STAGE/${DIR_NAME}/docs"
 cp docs/usage.md docs/how-it-works.md "$STAGE/${DIR_NAME}/docs/"
 mkdir -p "$STAGE/${DIR_NAME}/host"
@@ -72,9 +72,13 @@ Bili 下载器 - 快速开始
 
 1) 确保已经【完整解压】本压缩包（不要在压缩软件窗口里直接双击 install.bat）。
 
-2) 双击 install.bat，等它显示「安装完成」后按任意键关闭。
+2) 双击 install.bat，按窗口里的提示操作：
+   - 脚本会检测浏览器，并列出每个浏览器会改动哪些文件；
+   - 输入编号多选浏览器（all = 全部）；
+   - 确认后会安装；如果发现旧文件，会再次询问是否覆盖。
 
-3) 打开 Chrome，地址栏输入 chrome://extensions/
+3) 安装完成后，窗口里会显示加载扩展的步骤：
+   打开 Chrome，地址栏输入 chrome://extensions/
    - 打开右上角「开发者模式」
    - 点「加载已解压的扩展程序」
    - 选择本文件夹下的 extension 目录（不是它的上一级）

@@ -4,7 +4,7 @@
 //
 //   * Opening the panel always re-reads the current page, so a finished job in
 //     another tab can never hide this video's form.
-//   * While downloading, the toolbar badge shows the remaining time.
+//   * While downloading, the toolbar badge shows the progress percentage.
 //   * On success the badge shows ✓. If the panel is already open it stays open
 //     showing the finished screen; the ✓→form reset only happens when the panel
 //     is closed (see background.js).

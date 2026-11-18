@@ -129,22 +129,6 @@ function notifyStatus() {
   postToPopup({ type: "STATUS", running: [...jobs.values()].filter(job => job.state?.type === "progress").length });
 }
 
-// Compact remaining-time label for the toolbar badge, which fits ~4 characters.
-function badgeEta(state) {
-  const total = state.total || 0;
-  const done = state.downloaded || 0;
-  const speed = state.speed || 0;
-  if (!total || !speed || speed <= 0 || done >= total) return "";
-  const seconds = Math.max(0, Math.round((total - done) / speed));
-  if (seconds < 60) return `${seconds}s`;
-  if (seconds < 3600) {
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
-    return `${m}:${String(s).padStart(2, "0")}`;
-  }
-  return `${Math.round(seconds / 3600)}h`;
-}
-
 function clearBadge() {
   try {
     chrome.action.setBadgeText({ text: "" });
@@ -156,15 +140,11 @@ function clearBadge() {
 function badgeFor(state) {
   try {
     if (state?.type === "progress") {
-      const stage = state.stage || "";
-      // The badge shows the one thing the user cares about while waiting: how
-      // long is left. A percentage is not useful here and the bar in the panel
-      // already shows it, so until the first speed sample arrives (about half a
-      // second) it shows a placeholder instead.
-      const muxing = /合成|校验/.test(stage);
-      const text = badgeEta(state) || (muxing ? "合成" : "…");
-      chrome.action.setBadgeText({ text });
-      chrome.action.setBadgeBackgroundColor({ color: muxing ? "#00aeec" : "#fb7299" });
+      // The toolbar badge always shows download progress as a percentage.
+      // It fits four characters, so "100%" is the widest value.
+      const percent = Math.max(0, Math.min(100, Math.round(state.percent || 0)));
+      chrome.action.setBadgeText({ text: `${percent}%` });
+      chrome.action.setBadgeBackgroundColor({ color: "#fb7299" });
     } else if (state?.type === "done") {
       chrome.action.setBadgeText({ text: "✓" });
       chrome.action.setBadgeBackgroundColor({ color: "#00aeec" });

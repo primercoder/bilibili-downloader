@@ -14,38 +14,42 @@
 - **8 连接并行下载**，多 CDN 镜像自动测速与故障切换。
 - **断点续传**：连接断开、进程退出、浏览器回收后台页面，都能从已下载的分段继续。
 - 下载默认保存到系统**下载目录**，可在面板里修改。
-- 后台下载：关掉面板不影响任务；工具栏图标显示预计剩余时间，完成后显示 ✓。
+- 后台下载：关掉面板不影响任务；工具栏图标显示**下载进度百分比**，完成后显示 ✓。
 - 可选保留 `.m4s` 中间文件；默认合成后自动清理。
 - 完成后可在面板里直接「打开所在文件夹」。
+- **交互式安装 / 卸载**：自动检测浏览器，列出每个浏览器会改动的文件，支持多选；
+  发现旧版本文件时再次确认覆盖或取消。不需要任何命令行参数。
 
 ## 下载哪个包
 
 | 你的系统 | 下载 |
 | --- | --- |
-| Windows 10 / 11（x64） | `bili-downloader-2.0.2-windows-x64.zip` |
-| Linux x86_64 | `bili-downloader-2.0.2-linux-x64.tar.gz` |
-| Linux ARM64 | `bili-downloader-2.0.2-linux-arm64.tar.gz` |
+| Windows 10 / 11（x64） | `bili-downloader-2.0.3-windows-x64.zip` |
+| Linux x86_64 | `bili-downloader-2.0.3-linux-x64.tar.gz` |
+| Linux ARM64 | `bili-downloader-2.0.3-linux-arm64.tar.gz` |
 
 每个包都完整可用：里面同时包含扩展、对应架构的本地助手和说明文档。
 如果你的机器是 32 位系统，本扩展不提供对应助手，请使用 64 位系统。
 
 ## Windows 安装
 
-支持 Chrome、Edge、Brave、Chromium、Vivaldi。
+支持 Chrome、Chrome Beta/Dev、Edge、Brave、Chromium、Vivaldi、Opera、Yandex。
 
 ### 1. 解压
 
-下载 `bili-downloader-2.0.2-windows-x64.zip`，右键 → **全部解压到当前文件夹**。
+下载 `bili-downloader-2.0.3-windows-x64.zip`，右键 → **全部解压到当前文件夹**。
 
 > 一定要先解压。不要在压缩软件窗口里直接双击 `install.bat`，那样安装会失败。
 
 解压后目录如下：
 
 ```
-bili-downloader-2.0.2-windows-x64\
+bili-downloader-2.0.3-windows-x64\
 ├── 先看这里.txt
-├── install.bat
-├── uninstall.bat
+├── install.bat          ← 双击这个
+├── install.ps1          ← 安装流程（由 bat 调用）
+├── uninstall.bat        ← 双击卸载
+├── uninstall.ps1
 ├── README.md
 ├── docs\
 ├── extension\
@@ -55,13 +59,16 @@ bili-downloader-2.0.2-windows-x64\
 
 ### 2. 双击 `install.bat`
 
-窗口里出现「安装完成」后按任意键关闭即可。脚本只做三件事：
+脚本是**交互式**的，会依次让你确认：
 
-1. 把本地助手复制到你的用户目录；
-2. 写入 native messaging 清单；
-3. 在当前用户注册表（`HKCU`）中注册助手。
+1. 自动检测本机已安装的 Chromium 系浏览器，并列出每个浏览器安装后会被改动的
+   文件与注册表项；
+2. 输入编号**多选**要安装的浏览器（`all` 全选，`1 3` 或 `1,3` 选多个）；
+3. 确认后如果发现目标位置已有旧文件，会再次询问：
+   **覆盖 / 跳过有旧文件的浏览器 / 取消**；
+4. 安装完成后，逐个浏览器显示「加载扩展」的具体步骤。
 
-如果杀毒软件弹窗，选择「允许」。
+不需要任何命令行参数，也不需要管理员权限。如果杀毒软件弹窗，选择「允许」。
 
 ### 3. 加载扩展
 
@@ -77,7 +84,7 @@ bili-downloader-2.0.2-windows-x64\
 
 ## Linux 安装
 
-支持 Chrome、Chromium、Brave、Edge、Vivaldi，包括 Snap 和 Flatpak 版 Chromium。
+支持 Chrome、Chrome Beta/Dev、Chromium、Brave、Edge、Vivaldi、Opera、Yandex，包括 Snap 和 Flatpak 版。
 
 ### 1. 解压
 
@@ -85,12 +92,12 @@ bili-downloader-2.0.2-windows-x64\
 
 ```bash
 # x86_64
-tar -xzf bili-downloader-2.0.2-linux-x64.tar.gz
-cd bili-downloader-2.0.2-linux-x64
+tar -xzf bili-downloader-2.0.3-linux-x64.tar.gz
+cd bili-downloader-2.0.3-linux-x64
 
 # ARM64
-tar -xzf bili-downloader-2.0.2-linux-arm64.tar.gz
-cd bili-downloader-2.0.2-linux-arm64
+tar -xzf bili-downloader-2.0.3-linux-arm64.tar.gz
+cd bili-downloader-2.0.3-linux-arm64
 ```
 
 ### 2. 运行安装脚本
@@ -105,8 +112,9 @@ cd bili-downloader-2.0.2-linux-arm64
 chmod +x install.sh && ./install.sh
 ```
 
-脚本会自动识别系统架构和浏览器，安装对应助手并完成注册。
-想先看会做什么而不改动系统，可以运行 `./install.sh --check`。
+脚本会自动识别系统架构和浏览器，然后列出每个浏览器会改动的文件，让你
+**多选**安装；如果目标目录里已有旧版本文件，会再次确认**覆盖 / 跳过 / 取消**。
+脚本不需要任何命令行参数，也不需要 `sudo`。
 
 Snap / Flatpak 版 Chromium 的沙箱读不到 `~/.local`，脚本会自动把助手装到它们能访问的目录，无需手动配置。
 
@@ -132,7 +140,7 @@ Snap / Flatpak 版 Chromium 的沙箱读不到 `~/.local`，脚本会自动把�
 6. 点 **「下载 MP4」**。
 7. 完成后点「打开所在文件夹」查看成品。
 
-下载过程中可以关掉面板，任务会继续在后台运行，工具栏图标显示预计剩余时间。
+下载过程中可以关掉面板，任务会继续在后台运行，工具栏图标显示**下载进度百分比**。
 
 **快捷键**：`Alt+Shift+B` 打开面板。与其他扩展冲突时，可在 `chrome://extensions/shortcuts` 修改。
 
@@ -172,7 +180,8 @@ Snap / Flatpak 版 Chromium 的沙箱读不到 `~/.local`，脚本会自动把�
 
 ## 卸载
 
-Windows：双击 `uninstall.bat`，然后到 `chrome://extensions/` 移除扩展。
+Windows：双击 `uninstall.bat`。脚本同样是交互式的：先检测已注册的浏览器和残留文件，
+让你多选要卸载的浏览器，确认后删除注册表项、清单和助手文件，最后提示你到浏览器里移除扩展。
 
 Linux：
 
@@ -180,7 +189,8 @@ Linux：
 ./uninstall.sh
 ```
 
-然后到 `chrome://extensions/` 移除「Bili 下载器」。
+同样会列出浏览器、标出哪些目录里还有安装文件，让你多选后确认卸载。
+卸载完成后，到 `chrome://extensions/`（或对应浏览器的扩展管理页）移除「Bili 下载器」。
 
 ## 说明
 

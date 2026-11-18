@@ -315,7 +315,7 @@ B 站至少有两种封装变体，处理过两个真实缺陷：
 6.  点「下载 MP4」
 7.  background 建立任务记录（持久化到 storage）并下发给助手
 8.  助手：探测大小与镜像 → 8 线程分片下载（视频与音频并行）
-9.  每 500ms 回 progress，background 更新工具栏角标（预计剩余时间 → 合成）
+9.  每 500ms 回 progress，background 更新工具栏角标（下载进度百分比）
 10. 两流完成 → 内置引擎合成 progressive MP4 → 校验 → 原子 rename
 11. 回 done（路径 / 时长 / 编码）→ 面板显示「打开所在文件夹」
 ```
@@ -348,15 +348,22 @@ khkbfeoekeinbdgbicojpgfidfihfffc
 
 **第 1 步：解压**（必须，不能在压缩软件窗口里直接双击）
 
-得到 `install.bat`、`uninstall.bat`、`host\bili-host.exe`、`extension\`、`README.md`。
+得到 `install.bat`、`install.ps1`、`uninstall.bat`、`uninstall.ps1`、`host\bili-host.exe`、`extension\`、`README.md`。
 
 **第 2 步：双击 `install.bat`**
+
+脚本是交互式的，没有命令行参数：
+
+1. 检测已安装的浏览器，列出每个浏览器安装后会改动的文件与注册表项；
+2. 输入编号多选浏览器（`all` 全选）；
+3. 确认安装；发现旧文件时再次确认覆盖 / 跳过 / 取消；
+4. 逐个浏览器显示加载扩展的步骤。
 
 | 动作 | 位置 |
 | --- | --- |
 | 复制助手 | `%LOCALAPPDATA%\BiliDownloader\bili-host.exe` |
 | 写清单 | `%LOCALAPPDATA%\BiliDownloader\com.opencode.bili_downloader.json` |
-| 注册表 | `HKCU\Software\{Google\Chrome, Microsoft\Edge, BraveSoftware\Brave-Browser, Chromium, Vivaldi}\NativeMessagingHosts\...` |
+| 注册表 | `HKCU\Software\{Google\Chrome, Microsoft\Edge, BraveSoftware\Brave-Browser, Chromium, Vivaldi, ...}\NativeMessagingHosts\...` |
 
 写入 `HKCU`（当前用户），因此**无需管理员权限**。扩展 ID 在脚本内为常量，同时用 PowerShell 复算一次做自校验。
 
@@ -377,12 +384,12 @@ Windows 特有实现：
 
 ```bash
 # x86_64
-tar -xzf bili-downloader-2.0.2-linux-x64.tar.gz
-cd bili-downloader-2.0.2-linux-x64
+tar -xzf bili-downloader-2.0.3-linux-x64.tar.gz
+cd bili-downloader-2.0.3-linux-x64
 
 # ARM64
-tar -xzf bili-downloader-2.0.2-linux-arm64.tar.gz
-cd bili-downloader-2.0.2-linux-arm64
+tar -xzf bili-downloader-2.0.3-linux-arm64.tar.gz
+cd bili-downloader-2.0.3-linux-arm64
 ```
 
 **第 2 步：运行安装脚本**
@@ -391,7 +398,8 @@ cd bili-downloader-2.0.2-linux-arm64
 ./install.sh
 ```
 
-没有执行权限时先 `chmod +x install.sh`；想先确认会改动什么，用 `./install.sh --check`。
+没有执行权限时先 `chmod +x install.sh`。脚本同样是交互式的：检测浏览器、多选、
+检查旧文件并二次确认，不需要任何命令行参数。
 
 | 动作 | 位置 |
 | --- | --- |
@@ -422,7 +430,7 @@ Linux 特有实现：
 
 | 项目 | Windows | Linux |
 | --- | --- | --- |
-| 安装方式 | 双击 `install.bat` | `./install.sh` |
+| 安装方式 | 双击 `install.bat`（交互式） | `./install.sh`（交互式） |
 | 助手位置 | `%LOCALAPPDATA%\BiliDownloader\` | `~/.local/share/bili-downloader/` |
 | 注册机制 | 注册表 `HKCU` | JSON 文件 |
 | 默认下载目录 | 注册表已知文件夹 | XDG 配置 |

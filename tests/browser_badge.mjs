@@ -2,7 +2,7 @@
 /**
  * Verify the toolbar badge and the finished-screen contract.
  *
- *   * while downloading the badge shows time remaining, not a percentage
+ *   * while downloading the badge shows the progress percentage
  *   * on success it shows ✓
  *   * with the panel closed, ✓ is cleared after ~3s and the job is forgotten
  *   * the finished screen offers only "打开所在文件夹"
@@ -108,6 +108,9 @@ const main = async () => {
     await sleep(400);
   }
   console.log("角标采样:", JSON.stringify([...seen]));
+  if (![...seen].some(text => /^\d{1,3}%$/.test(text))) {
+    throw new Error(`下载中角标应显示百分比，实际采样 ${JSON.stringify([...seen])}`);
+  }
 
   // Wait for completion.
   let done = null;
@@ -150,7 +153,7 @@ const main = async () => {
   const stillThere = (jobsAfter || []).find(j => j.jobId === started.jobId);
   if (stillThere) throw new Error("任务完成后应被遗忘，但仍在任务表里");
 
-  console.log("\nPASS: 角标显示剩余时间 → 完成 ✓ → 3 秒后清空并遗忘任务");
+  console.log("\nPASS: 角标显示进度百分比 → 完成 ✓ → 3 秒后清空并遗忘任务");
   verify.close();
   video.close();
 };

@@ -2,9 +2,9 @@
 /**
  * Print what the badge would show, next to the raw progress numbers.
  *
- * Used to diagnose "badge shows a percentage instead of the remaining time":
- * it samples GET_ALL_JOBS (which carries downloaded/total/speed) while a real
- * download is running, so the ETA computation can be checked against real data.
+ * Used to diagnose "badge should show the download percentage":
+ * it samples GET_ALL_JOBS (which carries percent/downloaded/total/speed) while
+ * a real download is running, so the badge can be checked against real data.
  *
  *   node tests/probe_badge_state.mjs
  */
