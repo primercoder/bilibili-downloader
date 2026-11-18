@@ -34,13 +34,17 @@ import (
 )
 
 const (
-	segmentBytes   = 4 << 20 // 4 MiB per range request
 	defaultWorkers = 8
 	maxWorkers     = 16
 	userAgent      = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 	stallTimeout   = 45 * time.Second
 	maxSegmentTry  = 8
 )
+
+// segmentBytes is a variable, not a constant, so tests can shrink it and force
+// thousands of concurrent segment completions — the condition that used to
+// crash the process (see the snapshot in downloadFile).
+var segmentBytes int64 = 4 << 20 // 4 MiB per range request
 
 var httpClient = &http.Client{
 	Transport: &http.Transport{
@@ -469,6 +473,31 @@ func downloadFile(ctx context.Context, task streamTask, workers int) error {
 	defer cancel()
 
 	var mu sync.Mutex
+	// stateMu serialises the resume-state file write. Two workers can finish
+	// segments at almost the same moment, and without this they would both
+	// write the same temp path and race on the rename.
+	var stateMu sync.Mutex
+	persist := func() {
+		stateMu.Lock()
+		defer stateMu.Unlock()
+		// Snapshot under mu: iterating a map that another worker is writing
+		// crashes the whole process with "concurrent map iteration and map
+		// write", which is a fatal error no recover() can catch.
+		mu.Lock()
+		snapshot := &resumeState{
+			Key:       state.Key,
+			Total:     state.Total,
+			Segments:  state.Segments,
+			SegBytes:  state.SegBytes,
+			Completed: make(map[int]bool, len(state.Completed)),
+			Updated:   time.Now(),
+		}
+		for index, done := range state.Completed {
+			snapshot.Completed[index] = done
+		}
+		mu.Unlock()
+		saveResume(snapshot)
+	}
 	queue := make(chan int, segments)
 	for index := range written {
 		if !complete[index] {
@@ -567,7 +596,7 @@ func downloadFile(ctx context.Context, task streamTask, workers int) error {
 						complete[index] = true
 						state.Completed[index] = true
 						mu.Unlock()
-						saveResume(state)
+						persist()
 						finishSegment()
 						break
 					}

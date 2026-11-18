@@ -242,6 +242,47 @@ func TestPartialStateIsKeyedAndValidated(t *testing.T) {
 	}
 }
 
+// TestConcurrentSegmentCompletionDoesNotCrash reproduces a fatal crash that
+// only appears under real conditions: several workers finish segments at almost
+// the same moment, and the resume-state map was iterated (json.Marshal) while
+// another worker was inserting into it. Go treats that as a fatal error —
+// "concurrent map iteration and map write" — which kills the whole helper
+// process and cannot be recovered.
+//
+// Shrinking the segment size makes the race deterministic instead of hoping for
+// the right timing: hundreds of segments complete within milliseconds.
+func TestConcurrentSegmentCompletionDoesNotCrash(t *testing.T) {
+	previous := segmentBytes
+	segmentBytes = 64 << 10 // 64 KiB
+	t.Cleanup(func() { segmentBytes = previous })
+
+	const size = 3 << 20 // 48 segments, many finishing at once
+	_, server := newRangeServer(t, size)
+	item := stream{Codecs: "avc1-race", URLs: []string{server.URL + "/v.m4s"}}
+	target := filepath.Join(t.TempDir(), "video.m4s")
+	key := streamKey(item)
+	t.Cleanup(func() { clearResume(key) })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	if err := downloadFile(ctx, streamTask{label: "视频", stream: item, target: target,
+		referer: "https://www.bilibili.com/"}, 16); err != nil {
+		t.Fatalf("download failed: %v", err)
+	}
+	info, err := os.Stat(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Size() != size {
+		t.Fatalf("size %d, want %d", info.Size(), size)
+	}
+	// The state file must have been written and then cleared on success; a
+	// half-written JSON here would mean two workers raced on the same path.
+	if _, err := os.Stat(filepath.Join(stateDir(), key+".json")); !os.IsNotExist(err) {
+		t.Fatalf("resume state left behind after success: %v", err)
+	}
+}
+
 func TestSafeTitleFromExtensionNeverEscapesDirectory(t *testing.T) {
 	evil := []string{"../../etc/passwd", `..\..\windows\system32`, "a/../../b", ".", ".."}
 	for _, name := range evil {
