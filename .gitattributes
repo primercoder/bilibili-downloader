@@ -1,0 +1,16 @@
+# Batch files must keep CRLF line endings: cmd.exe can mis-handle labels and
+# `call :subroutine` in LF-only files, which is exactly what install.bat uses.
+*.bat           text eol=crlf
+
+# Shell scripts and Go sources stay LF.
+*.sh            text eol=lf
+*.go            text eol=lf
+*.js            text eol=lf
+*.json          text eol=lf
+*.md            text eol=lf
+
+# Binaries: never touch.
+*.exe           binary
+*.png           binary
+*.zip           binary
+*.tar.gz        binary

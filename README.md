@@ -17,6 +17,7 @@
 - [从源码构建](#从源码构建)
 - [性能数据](#性能数据)
 - [工作原理](#工作原理)（详细版见 [docs/how-it-works.md](docs/how-it-works.md)）
+- [使用与排错速查](docs/usage.md)
 - [卸载](#卸载)
 - [已知限制](#已知限制)
 
@@ -72,12 +73,16 @@
 
 ```
 bili-downloader-2.0.0-windows\
+├── 先看这里.txt         <- 三步快速开始（也可以用记事本打开）
 ├── install.bat          <- 待会双击这个
 ├── uninstall.bat
-├── README.md
+├── README.md            <- 完整说明
+├── docs\
+│   ├── usage.md         <- 使用与排错速查
+│   └── how-it-works.md  <- 运行原理
 ├── extension\           <- 待会要加载这个文件夹
 └── host\
-    └── bili-host.exe
+    └── bili-host.exe    <- 本地助手（由 install.bat 安装）
 ```
 
 ### 第 2 步：双击 `install.bat`
@@ -122,6 +127,22 @@ bili-downloader-2.0.0-windows\
 ```bash
 tar -xzf bili-downloader-<版本>-linux-x64.tar.gz
 cd bili-downloader-<版本>-linux
+```
+
+解压后应该能看到：
+
+```
+bili-downloader-2.0.0-linux/
+├── install.sh           <- 待会运行这个
+├── uninstall.sh
+├── README.md            <- 完整说明
+├── docs/
+│   ├── usage.md         <- 使用与排错速查
+│   └── how-it-works.md  <- 运行原理
+├── extension/           <- 待会要加载这个文件夹
+└── host/
+    ├── bili-host-linux-amd64
+    └── bili-host-linux-arm64
 ```
 
 ### 第 2 步：运行安装脚本
@@ -183,6 +204,8 @@ Snap 和 Flatpak 版的 Chromium 有沙箱限制，**读不到 `~/.local` 这类
 下载过程中可以关掉面板，任务会继续在后台跑；工具栏图标上的数字就是进度百分比。
 
 **快捷键**：`Alt+Shift+B` 打开面板（若与其他扩展冲突，可在 `chrome://extensions/shortcuts` 修改）。
+
+面板各状态的含义、按现象查原因的表，见 **[docs/usage.md](docs/usage.md)**（安装包里也带了一份，在 `docs/usage.md`）。
 
 ---
 
@@ -257,14 +280,16 @@ bash scripts/build.sh
 
 ```
 dist/
-├── bili-downloader-2.0.0-extension.zip        # 纯扩展（Chrome 应用商店 / 手动加载）
-├── bili-downloader-2.0.0-windows-x64.zip      # Windows 一键包
-├── bili-downloader-2.0.0-linux-x64.tar.gz     # Linux 一键包
+├── bili-downloader-2.0.0-windows-x64.zip      # Windows 完整包（扩展 + 助手 + 文档）
+├── bili-downloader-2.0.0-linux-x64.tar.gz     # Linux 完整包（扩展 + 助手 + 文档）
 └── hosts/
     ├── bili-host-linux-amd64                  # 静态链接，无 glibc 依赖
     ├── bili-host-linux-arm64
     └── bili-host-windows-amd64.exe
 ```
+
+> 不再单独产出扩展 zip。扩展离开本地助手无法下载任何东西，单独分发只会让人误下错包，
+> 因此扩展始终和所需的助手一起打包在平台包里。
 
 ### 开发时手动加载
 
