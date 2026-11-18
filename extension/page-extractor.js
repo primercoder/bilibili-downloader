@@ -6,14 +6,22 @@
 (async () => {
   const fail = message => ({ ok: false, error: message });
 
+  // PGC pages put the current episode in __INITIAL_STATE__.epInfo. This is the
+  // only reliable way to know which episode an ss-style URL is actually playing.
+  const readInitialState = () => {
+    const state = window.__INITIAL_STATE__;
+    return state && typeof state === "object" ? state : null;
+  };
+
   const readPageInfo = () => {
     // __playinfo__ is what the player itself received. It is the most reliable
-    // source and needs no extra network round-trip.
+    // source and needs no extra network round-trip. PGC responses are sometimes
+    // wrapped in result instead of data.
     const playinfo = window.__playinfo__;
     if (!playinfo || typeof playinfo !== "object") return null;
-    const dash = playinfo?.data?.dash;
-    if (!dash) return null;
-    return playinfo.data;
+    const payload = playinfo.data || playinfo.result;
+    if (!payload || typeof payload !== "object" || !payload.dash) return null;
+    return payload;
   };
 
   const describeCodec = code => {
@@ -45,6 +53,16 @@
     }
   };
 
+  // Episode durations from PGC APIs are milliseconds, while dash.duration is
+  // seconds. Values above 100000 only make sense as milliseconds.
+  const secondsOf = value => {
+    const number = Number(value) || 0;
+    return number > 100000 ? Math.round(number / 1000) : Math.round(number);
+  };
+
+  const episodeIdOf = episode => Number(episode?.ep_id || episode?.id || 0) || 0;
+  const episodeTitleOf = episode => episode?.long_title || episode?.title || "";
+
   try {
     const path = location.pathname;
     const videoMatch = path.match(/\/video\/(BV[0-9A-Za-z]+|av\d+)/i);
@@ -55,21 +73,33 @@
 
     const params = new URLSearchParams(location.search);
     const override = Number(window.__biliDownloaderPage || 0);
-    const page = Math.max(1, override || Number(params.get("p") || 1) || 1);
-    let bvid = videoMatch ? videoMatch[1] : "";
-    if (/^av\d+$/i.test(bvid)) {
-      const aid = bvid.slice(2);
-      const response = await fetch(
-        `https://api.bilibili.com/x/web-interface/view?aid=${encodeURIComponent(aid)}`,
-        { credentials: "include" },
-      );
-      const payload = await response.json();
-      bvid = payload?.data?.bvid || "";
-      if (!bvid) return fail("无法解析该 av 号，请使用新版 BV 号链接");
-    }
+    const initial = readInitialState();
+    const stateEpisode =
+      initial?.epInfo && typeof initial.epInfo === "object" ? initial.epInfo : null;
 
-    let view = null;
-    if (bvid) {
+    let bvid = "";
+    let cid = 0;
+    let page = 1;
+    let pages = [];
+    let title = "";
+    let partTitle = "";
+    let duration = 0;
+    let bangumi = false;
+    let episodeId = 0;
+
+    if (videoMatch) {
+      bvid = videoMatch[1];
+      if (/^av\d+$/i.test(bvid)) {
+        const aid = bvid.slice(2);
+        const response = await fetch(
+          `https://api.bilibili.com/x/web-interface/view?aid=${encodeURIComponent(aid)}`,
+          { credentials: "include" },
+        );
+        const payload = await response.json();
+        bvid = payload?.data?.bvid || "";
+        if (!bvid) return fail("无法解析该 av 号，请使用新版 BV 号链接");
+      }
+
       const response = await fetch(
         `https://api.bilibili.com/x/web-interface/view?bvid=${encodeURIComponent(bvid)}`,
         { credentials: "include" },
@@ -78,68 +108,175 @@
       if (payload.code !== 0) {
         return fail(`获取视频信息失败（${payload.code}）：${payload.message || "未知错误"}`);
       }
-      view = payload.data;
+      const view = payload.data;
+      pages = (view.pages || []).map(item => ({
+        page: item.page,
+        cid: item.cid,
+        part: item.part || "",
+        duration: item.duration || 0,
+      }));
+      const requested = Math.max(1, override || Number(params.get("p") || 1) || 1);
+      const currentPage = pages.find(item => item.page === requested) || pages[0];
+      cid = currentPage?.cid || view.cid;
+      page = currentPage?.page || 1;
+      title = view.title;
+      partTitle = pages.length > 1 ? currentPage?.part || "" : "";
+      duration = secondsOf(currentPage?.duration || view.duration);
     } else {
-      // Bangumi pages: resolve the episode to a bvid + cid.
-      const episode = bangumiMatch[1];
-      const response = await fetch(
-        `https://api.bilibili.com/pgc/view/web/season?ep_id=${encodeURIComponent(
-          episode.replace(/^ep/, ""),
-        )}`,
-        { credentials: "include" },
-      ).catch(() => null);
-      const payload = response ? await response.json() : null;
-      const episodes = payload?.result?.episodes || [];
-      const current = episodes.find(item => `ep${item.id}` === episode) || episodes[0];
-      if (!current?.bvid) {
-        return fail("番剧页面暂不支持（可能受版权限制），请使用普通视频页");
-      }
-      bvid = current.bvid;
-      view = {
-        bvid,
-        title: payload.result.season_title || current.long_title || "番剧",
-        pages: [{ cid: current.cid, page: 1, part: current.long_title || "" }],
-        duration: current.duration ? Math.round(current.duration / 1000) : 0,
+      // ---------------------------------------------------------------------
+      // Bangumi: resolve the current episode, then use the PGC playurl API.
+      // ---------------------------------------------------------------------
+      bangumi = true;
+      const token = bangumiMatch[1].toLowerCase();
+      const kind = token.slice(0, 2);
+      const numericId = Number(token.slice(2)) || 0;
+
+      let seasonError = "";
+      const fetchSeason = async query => {
+        try {
+          const response = await fetch(
+            `https://api.bilibili.com/pgc/view/web/season?${query}`,
+            { credentials: "include" },
+          );
+          const payload = await response.json();
+          if (payload?.code === 0 && payload.result) return payload.result;
+          seasonError =
+            `获取番剧信息失败（${payload?.code ?? "网络错误"}）：` +
+            (payload?.message || "未知错误");
+        } catch (error) {
+          seasonError = error?.message || String(error);
+        }
+        return null;
       };
+
+      // ep pages can be resolved directly; ss pages need the current episode
+      // from the player state, falling back to the first episode.
+      let season = kind === "ep" ? await fetchSeason(`ep_id=${numericId}`) : null;
+      if (!season && kind === "ss") {
+        season = await fetchSeason(`season_id=${numericId}`);
+      }
+      if (!season) {
+        const stateSeasonId = initial?.mediaInfo?.season_id || stateEpisode?.season_id;
+        if (stateSeasonId) season = await fetchSeason(`season_id=${stateSeasonId}`);
+      }
+
+      const stateEpisodes = Array.isArray(initial?.epList) ? initial.epList : [];
+      let episodes = Array.isArray(season?.episodes) ? [...season.episodes] : [];
+      if (!episodes.length && stateEpisodes.length) episodes = [...stateEpisodes];
+      if (!episodes.length && Array.isArray(season?.section)) {
+        for (const section of season.section) {
+          if (Array.isArray(section?.episodes)) episodes.push(...section.episodes);
+        }
+      }
+      // Only episodes with a cid can be played/downloaded. Filtering here keeps
+      // the panel's page numbers aligned with the list it shows.
+      episodes = episodes.filter(item => Number(item.cid));
+
+      let currentEpisodeId = 0;
+      if (kind === "ep") {
+        currentEpisodeId = numericId;
+      } else {
+        currentEpisodeId = episodeIdOf(stateEpisode);
+        if (!currentEpisodeId) currentEpisodeId = Number(params.get("ep_id") || 0) || 0;
+      }
+
+      let index = -1;
+      if (override > 0) index = override - 1;
+      if (index < 0 || index >= episodes.length) {
+        index = episodes.findIndex(item => episodeIdOf(item) === currentEpisodeId);
+      }
+      if (index < 0 && stateEpisode && episodeIdOf(stateEpisode)) {
+        const stateId = episodeIdOf(stateEpisode);
+        if (!episodes.some(item => episodeIdOf(item) === stateId)) episodes.unshift(stateEpisode);
+        index = episodes.findIndex(item => episodeIdOf(item) === stateId);
+      }
+      if (index < 0) index = 0;
+
+      let selected = episodes[index] || stateEpisode;
+      if (!selected?.bvid || !selected?.cid) {
+        if (stateEpisode?.bvid && stateEpisode?.cid) {
+          selected = stateEpisode;
+          if (!episodes.length) {
+            episodes = [stateEpisode];
+            index = 0;
+          }
+        } else {
+          return fail(seasonError || "番剧页面暂不支持（可能受版权限制），请使用普通视频页");
+        }
+      }
+
+      bvid = selected.bvid;
+      cid = Number(selected.cid);
+      page = index + 1;
+      episodeId = episodeIdOf(selected) || (kind === "ep" ? numericId : 0);
+      title =
+        season?.season_title ||
+        season?.title ||
+        initial?.mediaInfo?.title ||
+        stateEpisode?.title ||
+        "番剧";
+      partTitle = episodeTitleOf(selected);
+      duration = secondsOf(selected.duration);
+
+      pages = episodes
+        .map((item, itemIndex) => ({
+          page: itemIndex + 1,
+          cid: Number(item.cid) || 0,
+          part: episodeTitleOf(item),
+          duration: secondsOf(item.duration),
+        }))
+        .filter(item => item.cid);
     }
 
-    const pages = (view.pages || []).map(item => ({
-      page: item.page,
-      cid: item.cid,
-      part: item.part || "",
-      duration: item.duration || 0,
-    }));
-    const currentPage = pages.find(item => item.page === page) || pages[0];
-    const cid = currentPage?.cid || view.cid;
     if (!cid) return fail("未能确定视频 CID");
 
     // Reuse the player's own playurl response when it provably belongs to this
     // video. __playinfo__ carries no cid field, so validate by the stream path
-    // instead: Bilibili puts the cid in the media URL (".../upgcxcode/34/78/
-    // <cid>/<cid>_u1-1-...m4s"). Without this check, navigating from video A to
-    // video B kept A's stale streams while the title came from B, so the saved
-    // file had B's name and A's content.
+    // instead. Without this check, navigating from video A to video B kept A's
+    // stale streams while the title came from B.
     let playData = null;
-    if (!bangumiMatch) {
-      const cached = readPageInfo();
-      if (cached && cachedOwnsCid(cached, cid)) {
-        playData = cached;
-      }
+    const cached = readPageInfo();
+    if (cached && cachedOwnsCid(cached, cid)) {
+      playData = cached;
     }
 
     if (!playData) {
-      const endpoint =
-        `https://api.bilibili.com/x/player/playurl?bvid=${encodeURIComponent(bvid)}` +
-        `&cid=${encodeURIComponent(cid)}&fnval=4048&fnver=0&fourk=1&qn=127`;
-      const response = await fetch(endpoint, { credentials: "include" });
-      const payload = await response.json();
-      if (payload.code !== 0 || !payload.data) {
-        return fail(
-          `获取播放地址失败（${payload.code}）：${payload.message || "未知错误"}` +
-            (payload.code === -404 ? "，请确认视频可正常播放" : ""),
+      const endpoints = [];
+      if (bangumi && episodeId) {
+        endpoints.push(
+          `https://api.bilibili.com/pgc/player/web/playurl?ep_id=${encodeURIComponent(episodeId)}` +
+            `&cid=${encodeURIComponent(cid)}&bvid=${encodeURIComponent(bvid)}` +
+            `&fnval=4048&fnver=0&fourk=1&qn=127`,
         );
       }
-      playData = payload.data;
+      endpoints.push(
+        `https://api.bilibili.com/x/player/playurl?bvid=${encodeURIComponent(bvid)}` +
+          `&cid=${encodeURIComponent(cid)}&fnval=4048&fnver=0&fourk=1&qn=127`,
+      );
+
+      let lastCode = 0;
+      let lastMessage = "";
+      for (const endpoint of endpoints) {
+        try {
+          const response = await fetch(endpoint, { credentials: "include" });
+          const payload = await response.json();
+          const data = payload?.result || payload?.data;
+          if (payload?.code === 0 && data?.dash?.video?.length) {
+            playData = data;
+            break;
+          }
+          lastCode = payload?.code ?? 0;
+          lastMessage = payload?.message || "";
+        } catch (error) {
+          lastMessage = error?.message || String(error);
+        }
+      }
+      if (!playData) {
+        return fail(
+          `获取播放地址失败（${lastCode || "网络错误"}）：${lastMessage || "未知错误"}` +
+            (lastCode === -404 ? "，请确认视频可正常播放" : ""),
+        );
+      }
     }
 
     const dash = playData.dash;
@@ -185,13 +322,14 @@
 
     return {
       ok: true,
+      bangumi,
       bvid,
       cid,
       page,
-      pages: pages.length ? pages : [{ page: 1, cid, part: "", duration: view.duration }],
-      title: view.title,
-      partTitle: pages.length > 1 ? currentPage?.part || "" : "",
-      duration: Math.round(dash.duration || view.duration || 0),
+      pages: pages.length ? pages : [{ page: 1, cid, part: "", duration }],
+      title,
+      partTitle,
+      duration: Math.round(dash.duration || duration || 0),
       qualityNames,
       videos,
       audios,

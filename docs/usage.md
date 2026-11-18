@@ -32,7 +32,7 @@
 解压后应该看到：
 
 ```
-bili-downloader-2.0.3-windows-x64\
+bili-downloader-2.0.4-windows-x64\
 ├── install.bat          ← 待会双击这个
 ├── install.ps1          ← 安装流程（由 bat 调用）
 ├── uninstall.bat
@@ -78,12 +78,12 @@ bili-downloader-2.0.3-windows-x64\
 
 ```bash
 # x86_64
-tar -xzf bili-downloader-2.0.3-linux-x64.tar.gz
-cd bili-downloader-2.0.3-linux-x64
+tar -xzf bili-downloader-2.0.4-linux-x64.tar.gz
+cd bili-downloader-2.0.4-linux-x64
 
 # ARM64
-tar -xzf bili-downloader-2.0.3-linux-arm64.tar.gz
-cd bili-downloader-2.0.3-linux-arm64
+tar -xzf bili-downloader-2.0.4-linux-arm64.tar.gz
+cd bili-downloader-2.0.4-linux-arm64
 ```
 
 **第 2 步：运行安装脚本**
@@ -125,7 +125,7 @@ chmod +x install.sh && ./install.sh
 | **音频** | 默认选码率最高的音轨 |
 | **保存到** | 默认是系统下载目录，可点「选择」或直接改 |
 | **保留中间文件** | 默认关闭。开启后保留下载的 `.m4s`，便于排查问题 |
-| **分 P** | 仅多 P 视频出现 |
+| **分 P / 选集** | 多 P 视频显示分 P；番剧页面显示有观看权限的剧集 |
 
 4. 点 **「下载 MP4」**
 5. 完成后点「打开所在文件夹」查看成品

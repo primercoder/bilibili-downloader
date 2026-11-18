@@ -56,9 +56,9 @@ Chrome 扩展 (MV3)                      本地助手 (Go 单文件二进制)
 | 页面类型 | 正则 | 结果 |
 | --- | --- | --- |
 | 普通视频 | `/video/(BV[0-9A-Za-z]+|av\d+)/` | `bvid`，或旧式 `av` 号 |
-| 番剧 | `/bangumi/play/(ep\d+|ss\d+)/` | 剧集号，再查接口换取 `bvid` + `cid` |
+| 番剧 | `/bangumi/play/(ep\d+|ss\d+)/` | 从 `__INITIAL_STATE__` 或 season 接口解析当前集，再换取 `bvid` + `cid` |
 
-分 P 由 URL 的 `?p=N` 决定。面板切换分 P 时，扩展先注入页面作用域变量 `window.__biliDownloaderPage` 再执行提取脚本，执行完立刻清 0，避免污染下一次调用。
+分 P 由 URL 的 `?p=N` 决定；番剧由页面状态定位当前集。面板切换分 P / 选集时，扩展先注入页面作用域变量 `window.__biliDownloaderPage` 再执行提取脚本，执行完立刻清 0，避免污染下一次调用。
 
 ### 2.3 为什么能拿到登录态
 
@@ -100,6 +100,15 @@ GET https://api.bilibili.com/x/web-interface/view?bvid=BVxxx
 GET https://api.bilibili.com/x/player/playurl
     ?bvid=BVxxx&cid=<cid>&fnval=4048&fnver=0&fourk=1&qn=127
 ```
+
+番剧 / 影视页面优先使用 PGC 接口，再退回上面的普通接口：
+
+```
+GET https://api.bilibili.com/pgc/player/web/playurl
+    ?ep_id=<ep>&cid=<cid>&bvid=BVxxx&fnval=4048&fnver=0&fourk=1&qn=127
+```
+
+PGC 接口的播放数据在 `result` 字段，普通接口在 `data` 字段；提取脚本两者都兼容。
 
 | 参数 | 含义 |
 | --- | --- |
@@ -384,12 +393,12 @@ Windows 特有实现：
 
 ```bash
 # x86_64
-tar -xzf bili-downloader-2.0.3-linux-x64.tar.gz
-cd bili-downloader-2.0.3-linux-x64
+tar -xzf bili-downloader-2.0.4-linux-x64.tar.gz
+cd bili-downloader-2.0.4-linux-x64
 
 # ARM64
-tar -xzf bili-downloader-2.0.3-linux-arm64.tar.gz
-cd bili-downloader-2.0.3-linux-arm64
+tar -xzf bili-downloader-2.0.4-linux-arm64.tar.gz
+cd bili-downloader-2.0.4-linux-arm64
 ```
 
 **第 2 步：运行安装脚本**

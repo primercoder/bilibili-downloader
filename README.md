@@ -10,7 +10,7 @@
 - 在任意 `https://www.bilibili.com/video/BV...` 视频页点击扩展图标即可下载。
 - 自动使用页面登录态，列出**你的账号有权限的**清晰度（360P ~ 4K / HDR）。
 - 编码可选：默认 **AVC（H.264，兼容性最好）**，也支持 HEVC / AV1。
-- 支持**分 P 视频**，面板里可直接切换。
+- 支持**分 P 视频**与**番剧 / 影视**；番剧可在面板里按「选集」切换。
 - **8 连接并行下载**，多 CDN 镜像自动测速与故障切换。
 - **断点续传**：连接断开、进程退出、浏览器回收后台页面，都能从已下载的分段继续。
 - 下载默认保存到系统**下载目录**，可在面板里修改。
@@ -24,9 +24,9 @@
 
 | 你的系统 | 下载 |
 | --- | --- |
-| Windows 10 / 11（x64） | `bili-downloader-2.0.3-windows-x64.zip` |
-| Linux x86_64 | `bili-downloader-2.0.3-linux-x64.tar.gz` |
-| Linux ARM64 | `bili-downloader-2.0.3-linux-arm64.tar.gz` |
+| Windows 10 / 11（x64） | `bili-downloader-2.0.4-windows-x64.zip` |
+| Linux x86_64 | `bili-downloader-2.0.4-linux-x64.tar.gz` |
+| Linux ARM64 | `bili-downloader-2.0.4-linux-arm64.tar.gz` |
 
 每个包都完整可用：里面同时包含扩展、对应架构的本地助手和说明文档。
 如果你的机器是 32 位系统，本扩展不提供对应助手，请使用 64 位系统。
@@ -37,14 +37,14 @@
 
 ### 1. 解压
 
-下载 `bili-downloader-2.0.3-windows-x64.zip`，右键 → **全部解压到当前文件夹**。
+下载 `bili-downloader-2.0.4-windows-x64.zip`，右键 → **全部解压到当前文件夹**。
 
 > 一定要先解压。不要在压缩软件窗口里直接双击 `install.bat`，那样安装会失败。
 
 解压后目录如下：
 
 ```
-bili-downloader-2.0.3-windows-x64\
+bili-downloader-2.0.4-windows-x64\
 ├── 先看这里.txt
 ├── install.bat          ← 双击这个
 ├── install.ps1          ← 安装流程（由 bat 调用）
@@ -92,12 +92,12 @@ bili-downloader-2.0.3-windows-x64\
 
 ```bash
 # x86_64
-tar -xzf bili-downloader-2.0.3-linux-x64.tar.gz
-cd bili-downloader-2.0.3-linux-x64
+tar -xzf bili-downloader-2.0.4-linux-x64.tar.gz
+cd bili-downloader-2.0.4-linux-x64
 
 # ARM64
-tar -xzf bili-downloader-2.0.3-linux-arm64.tar.gz
-cd bili-downloader-2.0.3-linux-arm64
+tar -xzf bili-downloader-2.0.4-linux-arm64.tar.gz
+cd bili-downloader-2.0.4-linux-arm64
 ```
 
 ### 2. 运行安装脚本
@@ -135,7 +135,7 @@ Snap / Flatpak 版 Chromium 的沙箱读不到 `~/.local`，脚本会自动把�
 1. 打开任意 B 站视频页，例如 `https://www.bilibili.com/video/BV1xx411c7mD`。
 2. 点击工具栏的粉色 **B** 图标。
 3. 选择**清晰度 / 编码**和**音频**（默认已选好 AVC + 最佳音质）。
-4. 多 P 视频可以在「分 P」里切换。
+4. 多 P 视频可以在「分 P」里切换；番剧页面会在「选集」里列出有权限的剧集。
 5. 需要改保存位置就点「选择」，或直接改输入框。
 6. 点 **「下载 MP4」**。
 7. 完成后点「打开所在文件夹」查看成品。

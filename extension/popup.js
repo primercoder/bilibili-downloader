@@ -91,6 +91,7 @@ function orderVideos(videos) {
 }
 
 function fillPages() {
+  $("pageLabelText").textContent = info.bangumi ? "选集" : "分 P";
   const pages = info.pages || [];
   if (pages.length <= 1) {
     $("pageLabel").classList.add("hidden");
@@ -101,7 +102,9 @@ function fillPages() {
   for (const page of pages) {
     const option = document.createElement("option");
     option.value = String(page.page);
-    option.textContent = page.part ? `P${page.page} ${page.part}` : `P${page.page}`;
+    let label = `P${page.page}`;
+    if (page.part) label = `${info.bangumi ? `第${page.page}话` : `P${page.page}`} ${page.part}`;
+    option.textContent = label;
     $("pageSelect").append(option);
   }
   $("pageSelect").value = String(info.page || 1);
