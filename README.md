@@ -16,7 +16,7 @@
 - [常见问题](#常见问题)
 - [从源码构建](#从源码构建)
 - [性能数据](#性能数据)
-- [工作原理](#工作原理)
+- [工作原理](#工作原理)（详细版见 [docs/how-it-works.md](docs/how-it-works.md)）
 - [卸载](#卸载)
 - [已知限制](#已知限制)
 
@@ -347,6 +347,8 @@ python3 tests/bench_cdn.py --seconds 15 --connections 1 4 8
 **为什么需要本地助手**：浏览器的 `chrome.downloads` 无法并行分片写入指定偏移，也无法合并 DASH 音视频；纯浏览器方案要么内存爆掉（4K 视频），要么只能依赖几十 MB 的 ffmpeg.wasm。让扩展只做页面解析和 UI，把下载与合成交给本地进程，才能做到多连接、可续传、低内存。
 
 **为什么不用 FFmpeg**：B 站的 `.m4s` 本身是标准 fragmented MP4。内置引擎把 `moof`/`mdat` 片段抽出来，重建完整的 `stbl` 索引（`stts` / `ctts` / `stss` / `stsc` / `stco` / `stsz`），再按 progressive MP4 布局写出。这样成品和 `ffmpeg -c copy` 一致，但用户什么都不用装。
+
+页面识别、下载链接获取、多连接调度、临时文件生命周期、音视频合并细节以及两个平台各自的配置差异，见 **[docs/how-it-works.md](docs/how-it-works.md)**。
 
 **安全边界**：
 

@@ -37,6 +37,8 @@ cp -r extension "$STAGE/${NAME}-linux/"
 cp install.sh "$STAGE/${NAME}-linux/"
 cp uninstall.sh "$STAGE/${NAME}-linux/"
 cp README.md "$STAGE/${NAME}-linux/"
+mkdir -p "$STAGE/${NAME}-linux/docs"
+cp docs/how-it-works.md "$STAGE/${NAME}-linux/docs/"
 mkdir -p "$STAGE/${NAME}-linux/host"
 cp dist/hosts/bili-host-linux-amd64 "$STAGE/${NAME}-linux/host/"
 cp dist/hosts/bili-host-linux-arm64 "$STAGE/${NAME}-linux/host/"
@@ -50,13 +52,16 @@ cp -r extension "$STAGE/${NAME}-windows/"
 cp install.bat "$STAGE/${NAME}-windows/"
 cp uninstall.bat "$STAGE/${NAME}-windows/"
 cp README.md "$STAGE/${NAME}-windows/"
+mkdir -p "$STAGE/${NAME}-windows/docs"
+cp docs/how-it-works.md "$STAGE/${NAME}-windows/docs/"
 mkdir -p "$STAGE/${NAME}-windows/host"
 cp dist/hosts/bili-host-windows-amd64.exe "$STAGE/${NAME}-windows/host/bili-host.exe"
-# Convert README to CRLF so Notepad on Windows renders it correctly.
-python3 - "$STAGE/${NAME}-windows/README.md" <<'PY'
+# Convert Markdown to CRLF so Notepad on Windows renders it correctly.
+python3 - "$STAGE/${NAME}-windows/README.md" "$STAGE/${NAME}-windows/docs/how-it-works.md" <<'PY'
 import sys, pathlib
-path = pathlib.Path(sys.argv[1])
-path.write_bytes(path.read_text(encoding="utf-8").replace("\n", "\r\n").encode("utf-8"))
+for name in sys.argv[1:]:
+    path = pathlib.Path(name)
+    path.write_bytes(path.read_text(encoding="utf-8").replace("\n", "\r\n").encode("utf-8"))
 PY
 (cd "$STAGE" && zip -qr "$OLDPWD/dist/${NAME}-windows-x64.zip" "${NAME}-windows")
 rm -rf "$STAGE"
