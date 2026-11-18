@@ -24,9 +24,9 @@
 
 | 你的系统 | 下载 |
 | --- | --- |
-| Windows 10 / 11（x64） | `bili-downloader-2.0.4-windows-x64.zip` |
-| Linux x86_64 | `bili-downloader-2.0.4-linux-x64.tar.gz` |
-| Linux ARM64 | `bili-downloader-2.0.4-linux-arm64.tar.gz` |
+| Windows 10 / 11（x64） | `bili-downloader-2.0.5-windows-x64.zip` |
+| Linux x86_64 | `bili-downloader-2.0.5-linux-x64.tar.gz` |
+| Linux ARM64 | `bili-downloader-2.0.5-linux-arm64.tar.gz` |
 
 每个包都完整可用：里面同时包含扩展、对应架构的本地助手和说明文档。
 如果你的机器是 32 位系统，本扩展不提供对应助手，请使用 64 位系统。
@@ -37,14 +37,14 @@
 
 ### 1. 解压
 
-下载 `bili-downloader-2.0.4-windows-x64.zip`，右键 → **全部解压到当前文件夹**。
+下载 `bili-downloader-2.0.5-windows-x64.zip`，右键 → **全部解压到当前文件夹**。
 
 > 一定要先解压。不要在压缩软件窗口里直接双击 `install.bat`，那样安装会失败。
 
 解压后目录如下：
 
 ```
-bili-downloader-2.0.4-windows-x64\
+bili-downloader-2.0.5-windows-x64\
 ├── 先看这里.txt
 ├── install.bat          ← 双击这个
 ├── install.ps1          ← 安装流程（由 bat 调用）
@@ -92,12 +92,12 @@ bili-downloader-2.0.4-windows-x64\
 
 ```bash
 # x86_64
-tar -xzf bili-downloader-2.0.4-linux-x64.tar.gz
-cd bili-downloader-2.0.4-linux-x64
+tar -xzf bili-downloader-2.0.5-linux-x64.tar.gz
+cd bili-downloader-2.0.5-linux-x64
 
 # ARM64
-tar -xzf bili-downloader-2.0.4-linux-arm64.tar.gz
-cd bili-downloader-2.0.4-linux-arm64
+tar -xzf bili-downloader-2.0.5-linux-arm64.tar.gz
+cd bili-downloader-2.0.5-linux-arm64
 ```
 
 ### 2. 运行安装脚本

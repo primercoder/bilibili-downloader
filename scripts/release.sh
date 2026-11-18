@@ -49,14 +49,14 @@ cat > "$NOTES" <<'EOF'
 
 | 你的系统 | 下载 |
 | --- | --- |
-| Windows 10 / 11（x64） | `bili-downloader-2.0.4-windows-x64.zip` |
-| Linux x86_64 | `bili-downloader-2.0.4-linux-x64.tar.gz` |
-| Linux ARM64 | `bili-downloader-2.0.4-linux-arm64.tar.gz` |
+| Windows 10 / 11（x64） | `bili-downloader-2.0.5-windows-x64.zip` |
+| Linux x86_64 | `bili-downloader-2.0.5-linux-x64.tar.gz` |
+| Linux ARM64 | `bili-downloader-2.0.5-linux-arm64.tar.gz` |
 
 每个包都完整可用：里面同时包含 Chrome 扩展、对应架构的本地助手程序和说明文档。
 不需要安装 Python、FFmpeg 或任何运行库，也不需要管理员 / root 权限。
 
-## 本次更新（2.0.4）
+## 本次更新（2.0.5）
 
 - 工具栏图标改为显示下载进度百分比，完成后显示 ✓。
 - 安装 / 卸载改为交互式：自动检测浏览器、列出改动、支持多选；
@@ -68,11 +68,12 @@ cat > "$NOTES" <<'EOF'
 - 修复切到非目标网页后打开面板只报错、看不到下载进度的问题；有任务时不再检查当前网页。
 - 提升扩展版本号，确保 Chromium 重新加载新的后台脚本。
 - 支持番剧 / 影视页面：`ep`、`ss` 链接均可解析，有观看权限的剧集可在「选集」中切换并下载。
+- 修复排队中或已中断的任务在切换页面、关闭原标签后从面板消失的问题；活动任务现在会在任意页面保持可恢复。
 
 ## 包内结构
 
 ```
-bili-downloader-2.0.4-windows-x64\
+bili-downloader-2.0.5-windows-x64\
 ├── 先看这里.txt         # 快速开始
 ├── install.bat / install.ps1
 ├── uninstall.bat / uninstall.ps1

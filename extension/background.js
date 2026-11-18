@@ -13,6 +13,10 @@
 
 const HOST = "com.opencode.bili_downloader";
 const MAX_AUTO_RESUME = 2;
+// Jobs that are still alive somewhere in the host. These must survive tab
+// navigation and even tab closure, otherwise switching to a non-target page
+// (or closing the original tab) makes a queued/interrupted job unreachable.
+const ACTIVE_STATES = new Set(["progress", "queued", "interrupted"]);
 const JOB_STORE_KEY = "bili.jobs";
 let lastPersistError = "";
 
@@ -491,15 +495,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         await jobsReady;
         const tab = await getActiveTab();
         const direct = stateForTab(tab.id);
-        const busyTypes = ["progress", "queued", "interrupted"];
-        if (direct && busyTypes.includes(direct.type)) {
+        if (direct && ACTIVE_STATES.has(direct.type)) {
           return { ok: true, state: direct, tabId: tab.id };
         }
         // Fallback: a download may still be running for another tab (the user
         // navigated away or switched tabs). Attaching it to this tab keeps the
         // panel honest instead of looking idle and losing the progress.
         const candidates = [...jobs.values()]
-          .filter(job => busyTypes.includes(job.state?.type))
+          .filter(job => ACTIVE_STATES.has(job.state?.type))
           .sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
         const running =
           candidates.find(job => job.state?.type === "progress") ||
@@ -634,7 +637,7 @@ chrome.tabs.onRemoved.addListener(tabId => {
   infoCache.delete(tabId);
   if (jobId) {
     const job = jobs.get(jobId);
-    if (job && job.state?.type !== "progress") jobs.delete(jobId);
+    if (job && !ACTIVE_STATES.has(job.state?.type)) jobs.delete(jobId);
   }
 });
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
@@ -646,7 +649,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   const jobId = tabJobs.get(tabId);
   if (!jobId) return;
   const job = jobs.get(jobId);
-  if (job && job.state?.type === "progress") return;
+  if (job && ACTIVE_STATES.has(job.state?.type)) return;
   tabJobs.delete(tabId);
   if (job) jobs.delete(jobId);
 });

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Bili 下载器",
-  "version": "2.0.4",
+  "version": "2.0.5",
   "description": "下载 Bilibili 视频与音频并合成为 MP4。内置合成引擎，无需 FFmpeg。",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1utkFp6OccsDY+CMfFeuRuvNfBpcJxWEI1eavopPIif5vqMJV5eM/gC9RjSukEImbXKKURGdN/J3cKX2E8ljnf6DtoOQZyFifP4ZmeRHlUXC/HQ8fa5ZRZ9+SwtOv1DzauJRB0QAmA8VWF7f0FcW186e78bmfzE7htCM6wtIqu4dEQu5vENhEsksShu0P1zCwhCEJWun/MHAeJ3kW08pTVSjMoJJmlA1myShMpeQO6dsjQyVxMdZueWxU/IK/HeIhmn/C0iSgCnT14ECicrCGeCay7WIrNR4dmA59HnNrJTQ3T19k++kRMsvyxDj/vp2VxjAx2zq7SPBlpcmiktAKwIDAQAB",
   "minimum_chrome_version": "110",

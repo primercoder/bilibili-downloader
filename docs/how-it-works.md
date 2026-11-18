@@ -393,12 +393,12 @@ Windows 特有实现：
 
 ```bash
 # x86_64
-tar -xzf bili-downloader-2.0.4-linux-x64.tar.gz
-cd bili-downloader-2.0.4-linux-x64
+tar -xzf bili-downloader-2.0.5-linux-x64.tar.gz
+cd bili-downloader-2.0.5-linux-x64
 
 # ARM64
-tar -xzf bili-downloader-2.0.4-linux-arm64.tar.gz
-cd bili-downloader-2.0.4-linux-arm64
+tar -xzf bili-downloader-2.0.5-linux-arm64.tar.gz
+cd bili-downloader-2.0.5-linux-arm64
 ```
 
 **第 2 步：运行安装脚本**

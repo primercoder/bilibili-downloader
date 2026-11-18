@@ -32,7 +32,7 @@
 解压后应该看到：
 
 ```
-bili-downloader-2.0.4-windows-x64\
+bili-downloader-2.0.5-windows-x64\
 ├── install.bat          ← 待会双击这个
 ├── install.ps1          ← 安装流程（由 bat 调用）
 ├── uninstall.bat
@@ -78,12 +78,12 @@ bili-downloader-2.0.4-windows-x64\
 
 ```bash
 # x86_64
-tar -xzf bili-downloader-2.0.4-linux-x64.tar.gz
-cd bili-downloader-2.0.4-linux-x64
+tar -xzf bili-downloader-2.0.5-linux-x64.tar.gz
+cd bili-downloader-2.0.5-linux-x64
 
 # ARM64
-tar -xzf bili-downloader-2.0.4-linux-arm64.tar.gz
-cd bili-downloader-2.0.4-linux-arm64
+tar -xzf bili-downloader-2.0.5-linux-arm64.tar.gz
+cd bili-downloader-2.0.5-linux-arm64
 ```
 
 **第 2 步：运行安装脚本**

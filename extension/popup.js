@@ -363,6 +363,18 @@ async function startForm() {
 }
 
 async function initialize() {
+  // Retry re-runs initialize(); drop the old port and any stale job identity
+  // so messages from a previous failure cannot take over the panel.
+  if (popupPort) {
+    try { popupPort.disconnect(); } catch (_) { /* popup closing */ }
+    popupPort = null;
+  }
+  currentJobId = null;
+  interruptedJobId = null;
+  currentTabId = null;
+  info = null;
+  defaults = null;
+
   const port = chrome.runtime.connect({ name: "popup" });
   popupPort = port;
   port.onMessage.addListener(message => {
@@ -399,7 +411,7 @@ async function initialize() {
   const previous = state?.state;
 
   if (previous && ["progress", "queued", "interrupted", "done"].includes(previous.type)) {
-    currentJobId = previous.jobId || null;
+    currentJobId = previous.jobId || state?.attachedJobId || null;
     if (previous.type === "done") {
       // Do NOT call loadInfo() here: populate() would replace the finished
       // screen with the settings form.
