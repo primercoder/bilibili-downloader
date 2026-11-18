@@ -376,8 +376,13 @@ Windows 特有实现：
 **第 1 步：解压**
 
 ```bash
-tar -xzf bili-downloader-2.0.1-linux-x64.tar.gz
-cd bili-downloader-2.0.1-linux
+# x86_64
+tar -xzf bili-downloader-2.0.2-linux-x64.tar.gz
+cd bili-downloader-2.0.2-linux-x64
+
+# ARM64
+tar -xzf bili-downloader-2.0.2-linux-arm64.tar.gz
+cd bili-downloader-2.0.2-linux-arm64
 ```
 
 **第 2 步：运行安装脚本**

@@ -11,7 +11,12 @@
 #   dist/hosts/bili-host-linux-arm64               Linux ARM64 (static)
 #   dist/hosts/bili-host-windows-amd64.exe         Windows x86_64
 #   dist/bili-downloader-<version>-linux-x64.tar.gz
+#   dist/bili-downloader-<version>-linux-arm64.tar.gz
 #   dist/bili-downloader-<version>-windows-x64.zip
+#
+# Each Linux bundle carries only the host for its own architecture. Shipping
+# both inside one archive forced users to guess which binary was theirs and made
+# the x64 download look like the ARM one.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -30,37 +35,38 @@ cd ..
 chmod +x dist/hosts/bili-host-linux-amd64 dist/hosts/bili-host-linux-arm64
 ls -lh dist/hosts
 
-echo "==> packing linux bundle"
-STAGE=$(mktemp -d)
-mkdir -p "$STAGE/${NAME}-linux"
-cp -r extension "$STAGE/${NAME}-linux/"
-cp install.sh "$STAGE/${NAME}-linux/"
-cp uninstall.sh "$STAGE/${NAME}-linux/"
-cp README.md "$STAGE/${NAME}-linux/"
-mkdir -p "$STAGE/${NAME}-linux/docs"
-cp docs/usage.md "$STAGE/${NAME}-linux/docs/"
-cp docs/how-it-works.md "$STAGE/${NAME}-linux/docs/"
-mkdir -p "$STAGE/${NAME}-linux/host"
-cp dist/hosts/bili-host-linux-amd64 "$STAGE/${NAME}-linux/host/"
-cp dist/hosts/bili-host-linux-arm64 "$STAGE/${NAME}-linux/host/"
-tar -C "$STAGE" -czf "dist/${NAME}-linux-x64.tar.gz" "${NAME}-linux"
-rm -rf "$STAGE"
+echo "==> packing linux bundles"
+for ARCH in x64 arm64; do
+  if [ "$ARCH" = "x64" ]; then
+    HOST_BIN="bili-host-linux-amd64"
+  else
+    HOST_BIN="bili-host-linux-arm64"
+  fi
+  DIR_NAME="${NAME}-linux-${ARCH}"
+  STAGE=$(mktemp -d)
+  mkdir -p "$STAGE/${DIR_NAME}/host"
+  cp -r extension "$STAGE/${DIR_NAME}/"
+  cp install.sh uninstall.sh README.md "$STAGE/${DIR_NAME}/"
+  mkdir -p "$STAGE/${DIR_NAME}/docs"
+  cp docs/usage.md docs/how-it-works.md "$STAGE/${DIR_NAME}/docs/"
+  cp "dist/hosts/${HOST_BIN}" "$STAGE/${DIR_NAME}/host/"
+  tar -C "$STAGE" -czf "dist/${DIR_NAME}.tar.gz" "${DIR_NAME}"
+  rm -rf "$STAGE"
+done
 
 echo "==> packing windows bundle"
 STAGE=$(mktemp -d)
-mkdir -p "$STAGE/${NAME}-windows"
-cp -r extension "$STAGE/${NAME}-windows/"
-cp install.bat "$STAGE/${NAME}-windows/"
-cp uninstall.bat "$STAGE/${NAME}-windows/"
-cp README.md "$STAGE/${NAME}-windows/"
-mkdir -p "$STAGE/${NAME}-windows/docs"
-cp docs/usage.md "$STAGE/${NAME}-windows/docs/"
-cp docs/how-it-works.md "$STAGE/${NAME}-windows/docs/"
-mkdir -p "$STAGE/${NAME}-windows/host"
-cp dist/hosts/bili-host-windows-amd64.exe "$STAGE/${NAME}-windows/host/bili-host.exe"
+DIR_NAME="${NAME}-windows-x64"
+mkdir -p "$STAGE/${DIR_NAME}"
+cp -r extension "$STAGE/${DIR_NAME}/"
+cp install.bat uninstall.bat README.md "$STAGE/${DIR_NAME}/"
+mkdir -p "$STAGE/${DIR_NAME}/docs"
+cp docs/usage.md docs/how-it-works.md "$STAGE/${DIR_NAME}/docs/"
+mkdir -p "$STAGE/${DIR_NAME}/host"
+cp dist/hosts/bili-host-windows-amd64.exe "$STAGE/${DIR_NAME}/host/bili-host.exe"
 # Windows also gets a plain-text quick start next to the installer, so a user
 # who only double-clicks can still find the instructions without opening Markdown.
-cat > "$STAGE/${NAME}-windows/先看这里.txt" <<'TXT'
+cat > "$STAGE/${DIR_NAME}/先看这里.txt" <<'TXT'
 Bili 下载器 - 快速开始
 ======================
 
@@ -81,16 +87,16 @@ Bili 下载器 - 快速开始
 完整说明见 README.md，使用与排错见 docs\usage.md。
 TXT
 # Convert Markdown/plain text to CRLF so Notepad renders them correctly.
-python3 - "$STAGE/${NAME}-windows/README.md" \
-         "$STAGE/${NAME}-windows/docs/usage.md" \
-         "$STAGE/${NAME}-windows/docs/how-it-works.md" \
-         "$STAGE/${NAME}-windows/先看这里.txt" <<'PY'
+python3 - "$STAGE/${DIR_NAME}/README.md" \
+         "$STAGE/${DIR_NAME}/docs/usage.md" \
+         "$STAGE/${DIR_NAME}/docs/how-it-works.md" \
+         "$STAGE/${DIR_NAME}/先看这里.txt" <<'PY'
 import sys, pathlib
 for name in sys.argv[1:]:
     path = pathlib.Path(name)
     path.write_bytes(path.read_text(encoding="utf-8").replace("\n", "\r\n").encode("utf-8"))
 PY
-(cd "$STAGE" && zip -qr "$OLDPWD/dist/${NAME}-windows-x64.zip" "${NAME}-windows")
+(cd "$STAGE" && zip -qr "$OLDPWD/dist/${DIR_NAME}.zip" "${DIR_NAME}")
 rm -rf "$STAGE"
 
 echo
