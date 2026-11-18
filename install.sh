@@ -28,21 +28,35 @@ info() { printf '%s\n' "$*"; }
 die() { printf '错误：%s\n' "$*" >&2; exit 1; }
 
 # --- locate the helper binary -------------------------------------------------
+# Choose by the machine's own architecture first. The old order required the
+# amd64 binary to exist before ARM was even considered, so an ARM machine that
+# shipped only the arm64 helper aborted with "cannot find amd64" — the wrong file
+# was looked for, and the right one was never tried.
+ARCH=$(uname -m)
+case "$ARCH" in
+  aarch64|arm64|armv8*) BINARY_NAME="bili-host-linux-arm64" ;;
+  x86_64|amd64|x64)     BINARY_NAME="bili-host-linux-amd64" ;;
+  armv7l|armv6l|arm*)
+    die "本机是 32 位 ARM（$ARCH），而本扩展只提供 64 位（arm64）助手；请使用 64 位系统。"
+    ;;
+  *)
+    die "不支持的 CPU 架构：$ARCH（本扩展只提供 x86_64 与 arm64 的本地助手）"
+    ;;
+esac
+
 SOURCE=""
 for candidate in \
-  "$SCRIPT_DIR/host/bili-host-linux-amd64" \
-  "$SCRIPT_DIR/dist/hosts/bili-host-linux-amd64"; do
+  "$SCRIPT_DIR/host/$BINARY_NAME" \
+  "$SCRIPT_DIR/dist/hosts/$BINARY_NAME"; do
   [ -f "$candidate" ] && SOURCE="$candidate" && break
 done
-[ -n "$SOURCE" ] || die "找不到 host/bili-host-linux-amd64。请从发布包运行本脚本，或先运行 scripts/build.sh。"
 
-ARCH=$(uname -m)
-if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
-  for candidate in \
-    "$SCRIPT_DIR/host/bili-host-linux-arm64" \
-    "$SCRIPT_DIR/dist/hosts/bili-host-linux-arm64"; do
-    [ -f "$candidate" ] && SOURCE="$candidate" && break
-  done
+if [ -z "$SOURCE" ]; then
+  # Only now, having failed to find the right one, mention what is available.
+  available=$(ls "$SCRIPT_DIR/host"/bili-host-linux-* 2>/dev/null | xargs -r -n1 basename | tr '\n' ' ')
+  die "找不到适用于 $ARCH 的本地助手（$BINARY_NAME）。
+        包里现有：${available:-无}
+        请确认下载的发布包与本机架构一致，或从源码运行 scripts/build.sh 重新构建。"
 fi
 
 # --- extension id ------------------------------------------------------------

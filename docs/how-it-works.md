@@ -312,10 +312,10 @@ B 站至少有两种封装变体，处理过两个真实缺陷：
 3.  popup 发 GET_VIDEO_INFO → background 注入 page-extractor.js 到 MAIN world
 4.  脚本读 __playinfo__ 或请求 playurl → 返回视频流 / 音频流列表
 5.  popup 发 GET_DEFAULTS → 经 Native Messaging 取下载目录与平台信息
-6.  点「下载并合成 MP4」
+6.  点「下载 MP4」
 7.  background 建立任务记录（持久化到 storage）并下发给助手
 8.  助手：探测大小与镜像 → 8 线程分片下载（视频与音频并行）
-9.  每 500ms 回 progress，background 更新工具栏角标百分比
+9.  每 500ms 回 progress，background 更新工具栏角标（预计剩余时间 → 合成）
 10. 两流完成 → 内置引擎合成 progressive MP4 → 校验 → 原子 rename
 11. 回 done（路径 / 时长 / 编码）→ 面板显示「打开所在文件夹」
 ```
@@ -376,8 +376,8 @@ Windows 特有实现：
 **第 1 步：解压**
 
 ```bash
-tar -xzf bili-downloader-2.0.0-linux-x64.tar.gz
-cd bili-downloader-2.0.0-linux
+tar -xzf bili-downloader-2.0.1-linux-x64.tar.gz
+cd bili-downloader-2.0.1-linux
 ```
 
 **第 2 步：运行安装脚本**

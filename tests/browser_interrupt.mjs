@@ -9,6 +9,10 @@
  *
  *   node tests/browser_interrupt.mjs
  */
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
 const CDP = "http://127.0.0.1:9222";
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -17,6 +21,15 @@ async function targets() {
 }
 async function newTab(url) {
   return (await fetch(`${CDP}/json/new?${encodeURIComponent(url)}`, { method: "PUT" })).json();
+}
+
+/** Close the extension page for real, not just its debugging socket. Leaving the
+ * tab open keeps its popup port alive and lets it claim finished jobs, which
+ * changes the lifecycle this test is meant to observe. */
+async function closePage(session) {
+  await session.eval(`chrome.tabs.getCurrent(t => t && chrome.tabs.remove(t.id))`).catch(() => {});
+  session.close();
+  await sleep(150);
 }
 
 class Session {
@@ -55,6 +68,15 @@ const main = async () => {
 
   // A long video so the download is still running when we kill the worker.
   const videoUrl = "https://www.bilibili.com/video/BV1i4411L7br/";
+  // Keep the transfer in its own directory. Reusing ~/Downloads would find
+  // segments left by an earlier run (they are keyed by the stream URL), and the
+  // "interrupted" download would finish instantly before the kill.
+  // Must be outside the Snap private /tmp: the native helper runs inside the
+  // browser's sandbox, where /tmp/opencode is a different directory than the
+  // one this test can see. A plain home subdirectory is shared with it.
+  const workDir = path.join(os.homedir(), "bili-interrupt-test");
+  fs.rmSync(workDir, { recursive: true, force: true });
+  fs.mkdirSync(workDir, { recursive: true });
   const videoTab = await newTab(videoUrl);
   const video = new Session(videoTab.id);
   await sleep(7000);
@@ -76,7 +98,7 @@ const main = async () => {
     const audio = info.audios.slice().sort((a, b) => a.bandwidth - b.bandwidth)[0];
     const job = { id: crypto.randomUUID(), title: "interrupt-test", partTitle: "",
       bvid: info.bvid, page: info.page, duration: info.duration, video, audio,
-      keep: false, directory: "", workers: 8 };
+      keep: false, directory: ${JSON.stringify(workDir)}, workers: 8 };
     const response = await chrome.runtime.sendMessage({ type: "START_DOWNLOAD", job });
     return { ok: response.ok, jobId: response.jobId, error: response.error,
              height: video.height };
@@ -84,10 +106,21 @@ const main = async () => {
   console.log("started:", JSON.stringify(started));
   if (!started.ok) throw new Error(started.error);
 
-  await sleep(2500);
-  const progress = await popup.eval(
-    `(async () => (await chrome.runtime.sendMessage({ type: "GET_ALL_JOBS" })).jobs || [])()`,
-  );
+  // Kill only once the transfer is genuinely mid-flight. On a fast link the
+  // whole video can land in a couple of seconds, and killing after "done" would
+  // test nothing.
+  let progress = [];
+  for (let attempt = 0; attempt < 120; attempt++) {
+    progress = await popup.eval(
+      `(async () => (await chrome.runtime.sendMessage({ type: "GET_ALL_JOBS" })).jobs || [])()`,
+    );
+    const mine = (progress || []).find(j => j.jobId === started.jobId);
+    if (mine && mine.type === "done") {
+      throw new Error("下载在终止前就完成了，无法测试中断（请换一个更大的视频）");
+    }
+    if (mine && mine.type === "progress" && mine.downloaded > 0 && mine.total > 0) break;
+    await sleep(100);
+  }
   console.log("before kill:", JSON.stringify(progress).slice(0, 260));
 
   // Kill the service worker exactly like Chrome's idle GC does.
@@ -108,55 +141,66 @@ const main = async () => {
     state = await fresh.eval(
       `(async () => (await chrome.runtime.sendMessage({ type: "GET_TAB_STATE" })).state || null)()`,
     );
-    fresh.close();
+    await closePage(fresh);
     if (state) break;
     await sleep(1000);
   }
   console.log("after kill:", JSON.stringify(state).slice(0, 300));
-
-  // Accept either an explicit "interrupted" marker or a still-progressing job
-  // (if Chrome respawned the worker and the host finished quickly).
-  if (state?.type === "interrupted") {
-    const resumed = await popup.eval(
-      `(async () => await chrome.runtime.sendMessage({ type: "RESUME_JOB", jobId: ${JSON.stringify(state.jobId)} }))()`,
-    ).catch(() => null);
-    console.log("resume via old popup (worker gone):", JSON.stringify(resumed));
+  if (!state) throw new Error("中断后状态丢失：既没有任务记录，也没有可续传状态");
+  if (state.type !== "interrupted" && state.type !== "progress") {
+    throw new Error(`中断后状态应为 interrupted/progress，实际 ${state.type}`);
   }
-  console.log("\nNOTE: 关键断言在下面的最终状态里：任务要么完成，要么可续传，不能静默消失。");
+  console.log("\nNOTE: 关键断言在下面的最终产出里：任务必须真正下载完成，不能静默丢失。");
 
-  // Final: the job must reach done (after resume or on its own).
+  // Final: the job must reach a finished file (after resume or on its own).
+  //
+  // A finished job lives in memory for a few seconds, then is forgotten: that
+  // is intended, so polling for type "done" can miss it. The mp4 appearing in
+  // the directory is the durable proof.
+  const findsOutput = () => {
+    try {
+      return fs.readdirSync(workDir).find(n => n.startsWith("interrupt-test") && n.endsWith(".mp4")) || "";
+    } catch {
+      return "";
+    }
+  };
+
   const deadline = Date.now() + 600000;
+  let resumed = false;
   while (Date.now() < deadline) {
+    const output = findsOutput();
+    if (output) {
+      const full = `${workDir}/${output}`;
+      const size = fs.statSync(full).size;
+      await sleep(300);
+      if (fs.statSync(full).size === size && size > 0) {
+        console.log(`\nPASS: 中断后任务完成，输出 ${output}（${size} 字节），没有静默丢失`);
+        popup.close();
+        video.close();
+        return;
+      }
+    }
     const tab = await newTab(`chrome-extension://${extension}/popup.html`);
     const fresh = new Session(tab.id);
     await sleep(800);
     const jobs = await fresh.eval(
       `(async () => (await chrome.runtime.sendMessage({ type: "GET_ALL_JOBS" })).jobs || [])()`,
     );
-    fresh.close();
     const mine = (jobs || []).find(j => j.jobId === started.jobId);
     if (mine) {
-      console.log(`  job ${mine.jobId}: ${mine.type} ${mine.percent || 0}%`);
-      if (mine.type === "done") {
-        console.log("\nPASS: 中断后任务仍然可以完成，没有静默丢失");
-        popup.close();
-        video.close();
-        return;
-      }
-      if (mine.type === "interrupted") {
-        const tab2 = await newTab(`chrome-extension://${extension}/popup.html`);
-        const again = new Session(tab2.id);
-        await sleep(700);
-        const resumed = await again.eval(
-          `(async () => await chrome.runtime.sendMessage({ type: "RESUME_JOB", jobId: ${JSON.stringify(mine.jobId)} }))()`,
+      console.log(`  job ${mine.jobId}: ${mine.type} ${mine.percent || 0}% output=${mine.output || "-"}`);
+      if (mine.type === "interrupted" && !resumed) {
+        const resumedResponse = await fresh.eval(
+          `(async () => await chrome.runtime.sendMessage({ type: "RESUME_JOB", jobId: ${JSON.stringify(started.jobId)} }))()`,
         );
-        again.close();
-        console.log("  resume:", JSON.stringify(resumed));
+        resumed = true;
+        console.log("  resume:", JSON.stringify(resumedResponse));
       }
     }
-    await sleep(3000);
+    await closePage(fresh);
+    await sleep(2000);
   }
-  throw new Error("任务既没有完成也没有可续传状态 —— 状态丢失");
+  throw new Error("任务既没有完成也没有产出文件 —— 状态丢失");
 };
 
 main().catch(error => {

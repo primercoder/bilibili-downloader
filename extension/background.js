@@ -32,10 +32,21 @@ const infoCache = new Map();
 // with them, which aborts the download. The helper resumes from its on-disk
 // segments, but only if we remember which job was running. So every state
 // change is mirrored into chrome.storage.local and reconciled on startup.
+// Only work that is still in flight (or interrupted mid-way) is worth keeping.
+//
+// A finished result is transient UI state: it is cleared after 3 seconds, or as
+// soon as the panel showing it closes. Persisting it made every service-worker
+// restart resurrect old ✓ badges for videos finished long ago, and left the job
+// table full of stale entries that the panel then had to ignore.
+function shouldPersist(state) {
+  return state?.type === "progress" || state?.type === "queued" || state?.type === "interrupted";
+}
+
 async function persistJobs() {
   try {
     const serialisable = {};
     for (const [jobId, job] of jobs) {
+      if (!shouldPersist(job.state)) continue;
       serialisable[jobId] = {
         tabId: job.tabId,
         bvid: job.bvid,
@@ -65,27 +76,31 @@ async function restoreJobs() {
   }
   for (const [jobId, job] of Object.entries(saved)) {
     if (!job || !job.payload) continue;
-    if (job.state?.type === "progress") {
+    const type = job.state?.type;
+    if (type === "progress" || type === "queued" || type === "interrupted") {
       // It cannot still be running: its death closed the native port. Report it
       // as interrupted so the user gets a one-click resume instead of silence.
+      // Queued jobs never transferred a byte, but they must still surface —
+      // dropping them here is what made a queued second download vanish.
       jobs.set(jobId, {
         ...job,
         state: {
           type: "interrupted",
           state: "interrupted",
           jobId,
-          stage: "下载已中断",
+          stage: type === "queued" ? "排队时被中断" : "下载已中断",
           percent: job.state.percent || 0,
-          detail: "浏览器回收了后台页面；已下载的分段仍然保留，可以续传",
+          detail:
+            type === "queued"
+              ? "还没开始下载；点击继续即可开始"
+              : "浏览器回收了后台页面；已下载的分段仍然保留，可以续传",
         },
         resumable: true,
       });
-    } else if (job.state?.type === "done" || job.state?.type === "error") {
-      jobs.set(jobId, job);
-    } else {
-      continue;
+      if (job.tabId) tabJobs.set(job.tabId, jobId);
     }
-    if (job.tabId) tabJobs.set(job.tabId, jobId);
+    // Finished results are deliberately not restored: they are transient UI
+    // state and must not come back as a stale ✓ after a worker restart.
   }
   if (jobs.size) {
     const newest = [...jobs.values()].sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0))[0];
@@ -114,12 +129,42 @@ function notifyStatus() {
   postToPopup({ type: "STATUS", running: [...jobs.values()].filter(job => job.state?.type === "progress").length });
 }
 
+// Compact remaining-time label for the toolbar badge, which fits ~4 characters.
+function badgeEta(state) {
+  const total = state.total || 0;
+  const done = state.downloaded || 0;
+  const speed = state.speed || 0;
+  if (!total || !speed || speed <= 0 || done >= total) return "";
+  const seconds = Math.max(0, Math.round((total - done) / speed));
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${String(s).padStart(2, "0")}`;
+  }
+  return `${Math.round(seconds / 3600)}h`;
+}
+
+function clearBadge() {
+  try {
+    chrome.action.setBadgeText({ text: "" });
+  } catch (_) {
+    /* action unavailable */
+  }
+}
+
 function badgeFor(state) {
   try {
     if (state?.type === "progress") {
-      const percent = Math.max(0, Math.min(100, Math.round(state.percent || 0)));
-      chrome.action.setBadgeText({ text: `${percent}` });
-      chrome.action.setBadgeBackgroundColor({ color: percent >= 100 ? "#00aeec" : "#fb7299" });
+      const stage = state.stage || "";
+      // The badge shows the one thing the user cares about while waiting: how
+      // long is left. A percentage is not useful here and the bar in the panel
+      // already shows it, so until the first speed sample arrives (about half a
+      // second) it shows a placeholder instead.
+      const muxing = /合成|校验/.test(stage);
+      const text = badgeEta(state) || (muxing ? "合成" : "…");
+      chrome.action.setBadgeText({ text });
+      chrome.action.setBadgeBackgroundColor({ color: muxing ? "#00aeec" : "#fb7299" });
     } else if (state?.type === "done") {
       chrome.action.setBadgeText({ text: "✓" });
       chrome.action.setBadgeBackgroundColor({ color: "#00aeec" });
@@ -131,19 +176,71 @@ function badgeFor(state) {
   }
 }
 
+// How long the ✓ stays when nothing is showing the result. Clicking the icon
+// inside this window opens the finished screen; after it the job is dropped so
+// the next open starts from a clean form.
+const DONE_BADGE_MS = 3000;
+/** jobId -> timer that clears the ✓ and forgets the finished job */
+const doneTimers = new Map();
+/** Finished jobs whose ✓ must not expire because a panel just opened. */
+const pausedDone = new Set();
+/** The finished job the currently open panel is displaying, if any. */
+let shownDoneJobId = "";
+
+function dropJob(jobId) {
+  const job = jobs.get(jobId);
+  jobs.delete(jobId);
+  if (job?.tabId && tabJobs.get(job.tabId) === jobId) tabJobs.delete(job.tabId);
+  if (shownDoneJobId === jobId) shownDoneJobId = "";
+  pausedDone.delete(jobId);
+  // Recompute instead of clearing: another job may be mid-download and its
+  // progress badge must survive this one being forgotten.
+  const active = [...jobs.values()]
+    .filter(j => j.state?.type === "progress" || j.state?.type === "done")
+    .sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0))[0];
+  if (active) badgeFor(active.state);
+  else clearBadge();
+  persistJobs();
+}
+
+function scheduleDoneReset(jobId) {
+  cancelDoneReset(jobId);
+  doneTimers.set(
+    jobId,
+    setTimeout(() => {
+      doneTimers.delete(jobId);
+      // A panel is showing this result, or just opened to show it: its own
+      // close is what resets the state, so the ✓ outlives the timer.
+      if (shownDoneJobId === jobId || pausedDone.has(jobId)) return;
+      dropJob(jobId);
+    }, DONE_BADGE_MS),
+  );
+}
+
+function cancelDoneReset(jobId) {
+  const timer = doneTimers.get(jobId);
+  if (timer) {
+    clearTimeout(timer);
+    doneTimers.delete(jobId);
+  }
+}
+
 function setJobState(jobId, state) {
   const job = jobs.get(jobId);
   if (!job) return;
   job.state = state;
   if (["done", "error"].includes(state.type)) {
-    // Terminal states stay visible for this tab only, so the next video always
-    // starts from a clean form.
     job.finishedAt = Date.now();
   }
   badgeFor(state);
   postToPopup({ type: "JOB", jobId, tabId: job.tabId, state });
   notifyStatus();
   persistJobs();
+  if (state.type === "done") {
+    scheduleDoneReset(jobId);
+  } else if (state.type === "progress" || state.type === "queued") {
+    cancelDoneReset(jobId);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -336,8 +433,36 @@ async function extractForTab(tabId, page) {
 chrome.runtime.onConnect.addListener(port => {
   if (port.name !== "popup") return;
   popupPort = port;
+  // Pause pending ✓ expiries. The user may have clicked the icon precisely to
+  // see this result, and the popup needs a moment to connect and ask for state;
+  // letting the timer fire underneath it would drop the screen just clicked for.
+  for (const jobId of [...doneTimers.keys()]) {
+    cancelDoneReset(jobId);
+    pausedDone.add(jobId);
+  }
+  port.onMessage.addListener(message => {
+    if (message?.type !== "MARK_DONE_VISIBLE") return;
+    const jobId = message.jobId || "";
+    // This panel owns the finished screen: keep it while the panel is open.
+    shownDoneJobId = jobId;
+    pausedDone.delete(jobId);
+    cancelDoneReset(jobId);
+  });
   port.onDisconnect.addListener(() => {
-    if (popupPort === port) popupPort = null;
+    if (popupPort !== port) return;
+    popupPort = null;
+    // Closing the panel resets what it was showing. Any finished job it opened
+    // too late to display is dropped too, otherwise its ✓ would never clear.
+    if (shownDoneJobId) {
+      const jobId = shownDoneJobId;
+      shownDoneJobId = "";
+      pausedDone.delete(jobId);
+      if (jobs.has(jobId)) dropJob(jobId);
+    }
+    for (const jobId of [...pausedDone]) {
+      pausedDone.delete(jobId);
+      if (jobs.has(jobId)) dropJob(jobId);
+    }
   });
   if (lastDefaults) port.postMessage({ type: "DEFAULTS", defaults: lastDefaults });
 });
@@ -365,6 +490,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             type: job.state?.type || "",
             stage: job.state?.stage || "",
             percent: job.state?.percent || 0,
+            downloaded: job.state?.downloaded || 0,
+            total: job.state?.total || 0,
+            speed: job.state?.speed || 0,
             output: job.state?.output || "",
             error: job.state?.error || "",
             startedAt: job.startedAt || 0,
@@ -430,8 +558,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             detail: port.error,
           };
         }
-        port.postMessage({ type: "defaults" });
-        return { ok: true };
+        // The popup checks this before showing the form, so it needs a real
+        // answer rather than "request sent". Use the handshake value when it is
+        // already known, otherwise wait briefly for the host's first reply.
+        if (!lastDefaults) {
+          await new Promise(resolve => {
+            const deadline = Date.now() + 2500;
+            const tick = () => {
+              if (lastDefaults || Date.now() > deadline) resolve();
+              else setTimeout(tick, 50);
+            };
+            tick();
+          });
+        }
+        if (!lastDefaults) {
+          return { ok: false, error: "本地助手没有响应，请重新运行安装脚本后重启浏览器。" };
+        }
+        return { ok: true, defaults: lastDefaults };
       }
       case "CHOOSE_DIRECTORY": {
         const port = await connectNative();

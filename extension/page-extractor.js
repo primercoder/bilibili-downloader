@@ -29,6 +29,22 @@
       url => typeof url === "string" && url.startsWith("https://"),
     );
 
+  // True when a cached playinfo response actually belongs to this cid. Bilibili
+  // embeds the cid as a path segment of every media URL, and __playinfo__ has no
+  // cid field of its own, so the URL is the only reliable marker.
+  const cachedOwnsCid = (data, cid) => {
+    const dash = data?.dash;
+    const first = dash?.video?.[0] || dash?.audio?.[0];
+    if (!first) return false;
+    const url = urlsOf(first)[0];
+    if (!url) return false;
+    try {
+      return new URL(url).pathname.split("/").includes(String(cid));
+    } catch {
+      return false;
+    }
+  };
+
   try {
     const path = location.pathname;
     const videoMatch = path.match(/\/video\/(BV[0-9A-Za-z]+|av\d+)/i);
@@ -97,12 +113,16 @@
     const cid = currentPage?.cid || view.cid;
     if (!cid) return fail("未能确定视频 CID");
 
-    // Prefer the data the player already fetched for the page being watched.
+    // Reuse the player's own playurl response when it provably belongs to this
+    // video. __playinfo__ carries no cid field, so validate by the stream path
+    // instead: Bilibili puts the cid in the media URL (".../upgcxcode/34/78/
+    // <cid>/<cid>_u1-1-...m4s"). Without this check, navigating from video A to
+    // video B kept A's stale streams while the title came from B, so the saved
+    // file had B's name and A's content.
     let playData = null;
     if (!bangumiMatch) {
       const cached = readPageInfo();
-      const cachedCid = cached?.cid ? String(cached.cid) : "";
-      if (cached && (!cachedCid || cachedCid === String(cid))) {
+      if (cached && cachedOwnsCid(cached, cid)) {
         playData = cached;
       }
     }

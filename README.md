@@ -53,7 +53,7 @@
 - 下载默认保存到系统**下载目录**（Windows 是 `下载` 文件夹，Linux 读取 XDG 配置），可在面板里改。
 - 可选保留 `.m4s` 中间文件；默认合成后自动清理。
 - 完成后可在面板里直接「打开所在文件夹」。
-- 支持后台下载：关掉面板不影响下载，浏览器工具栏图标会显示进度百分比。
+- 支持后台下载：关掉面板不影响下载；工具栏图标显示**预计剩余时间**，合成时显示「合成」，完成后短暂显示 ✓（3 秒）。
 
 ---
 
@@ -72,7 +72,7 @@
 解压后应该能看到：
 
 ```
-bili-downloader-2.0.0-windows\
+bili-downloader-2.0.1-windows\
 ├── 先看这里.txt         <- 三步快速开始（也可以用记事本打开）
 ├── install.bat          <- 待会双击这个
 ├── uninstall.bat
@@ -132,7 +132,7 @@ cd bili-downloader-<版本>-linux
 解压后应该能看到：
 
 ```
-bili-downloader-2.0.0-linux/
+bili-downloader-2.0.1-linux/
 ├── install.sh           <- 待会运行这个
 ├── uninstall.sh
 ├── README.md            <- 完整说明
@@ -195,13 +195,14 @@ Snap 和 Flatpak 版的 Chromium 有沙箱限制，**读不到 `~/.local` 这类
 
 1. 打开任意 B 站视频页，例如 `https://www.bilibili.com/video/BV1xx411c7mD`
 2. 点击工具栏的粉色 **B** 图标
-3. 选择**清晰度 / 编码**、**音频质量**（默认已选好 1080P AVC + 最佳音频）
-4. 分 P 视频可以在「分 P 选择」里切换
-5. 需要改保存位置就点「选择…」，或直接改输入框
-6. 点 **「下载并合成 MP4」**
+3. 选择**清晰度 / 编码**、**音频**（默认已选好 AVC + 最佳音质）
+4. 多 P 视频可以在「分 P」里切换
+5. 需要改保存位置就点「选择」，或直接改输入框
+6. 点 **「下载 MP4」**
 7. 完成后点「打开所在文件夹」即可看到成品
 
-下载过程中可以关掉面板，任务会继续在后台跑；工具栏图标上的数字就是进度百分比。
+下载过程中可以关掉面板，任务会继续在后台跑；工具栏图标显示**预计剩余时间**，
+合成时显示「合成」，完成后短暂显示 ✓（3 秒）。
 
 **快捷键**：`Alt+Shift+B` 打开面板（若与其他扩展冲突，可在 `chrome://extensions/shortcuts` 修改）。
 
@@ -280,8 +281,8 @@ bash scripts/build.sh
 
 ```
 dist/
-├── bili-downloader-2.0.0-windows-x64.zip      # Windows 完整包（扩展 + 助手 + 文档）
-├── bili-downloader-2.0.0-linux-x64.tar.gz     # Linux 完整包（扩展 + 助手 + 文档）
+├── bili-downloader-2.0.1-windows-x64.zip      # Windows 完整包（扩展 + 助手 + 文档）
+├── bili-downloader-2.0.1-linux-x64.tar.gz     # Linux 完整包（扩展 + 助手 + 文档）
 └── hosts/
     ├── bili-host-linux-amd64                  # 静态链接，无 glibc 依赖
     ├── bili-host-linux-arm64
@@ -322,6 +323,15 @@ BILI_EXTENSION_ID=khkbfeoekeinbdgbicojpgfidfihfffc node tests/browser_extra.mjs
 
 # 后台被回收后的中断与续传
 BILI_EXTENSION_ID=khkbfeoekeinbdgbicojpgfidfihfffc node tests/browser_interrupt.mjs
+
+# 页面内切换视频后不能复用上一个视频的流（标题变了文件没变）
+BILI_EXTENSION_ID=khkbfeoekeinbdgbicojpgfidfihfffc node tests/browser_stale_streams.mjs
+
+# 工具栏角标：剩余时间 -> 合成 -> ✓ -> 3 秒后清空
+BILI_EXTENSION_ID=khkbfeoekeinbdgbicojpgfidfihfffc node tests/browser_badge.mjs
+
+# 完成界面：3 秒内点图标看结果 / 面板打开时保持 / 关闭后重置
+BILI_EXTENSION_ID=khkbfeoekeinbdgbicojpgfidfihfffc node tests/browser_done_screen.mjs
 
 # CDN 多连接吞吐基准
 python3 tests/bench_cdn.py --seconds 15 --connections 1 4 8
