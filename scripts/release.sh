@@ -65,6 +65,7 @@ cat > "$NOTES" <<'EOF'
 - Windows 使用 `install.ps1` / `uninstall.ps1` 实现交互流程，仍可双击 `install.bat` / `uninstall.bat`。
 - 精简安装与卸载脚本输出，减少重复信息。
 - 修复浏览器检测：不再把旧版留下的空配置目录或 Snap 命令误判为普通 Chrome / Chromium。
+- 修复切到非目标网页后打开面板只报错、看不到下载进度的问题；有任务时不再检查当前网页。
 - 提升扩展版本号，确保 Chromium 重新加载新的后台脚本。
 
 ## 包内结构

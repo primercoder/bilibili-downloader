@@ -491,23 +491,33 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         await jobsReady;
         const tab = await getActiveTab();
         const direct = stateForTab(tab.id);
-        if (direct) return { ok: true, state: direct, tabId: tab.id };
+        const busyTypes = ["progress", "queued", "interrupted"];
+        if (direct && busyTypes.includes(direct.type)) {
+          return { ok: true, state: direct, tabId: tab.id };
+        }
         // Fallback: a download may still be running for another tab (the user
         // navigated away or switched tabs). Attaching it to this tab keeps the
         // panel honest instead of looking idle and losing the progress.
         const candidates = [...jobs.values()]
-          .filter(job => job.state?.type === "progress" || job.state?.type === "interrupted")
+          .filter(job => busyTypes.includes(job.state?.type))
           .sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
-        const running = candidates.find(job => job.state?.type === "progress") || candidates[0];
-        if (!running) return { ok: true, state: null, tabId: tab.id };
-        return {
-          ok: true,
-          state: running.state,
-          tabId: tab.id,
-          attachedJobId: running.state.jobId || null,
-          otherTab: running.tabId !== tab.id,
-          resumable: running.state?.type === "interrupted",
-        };
+        const running =
+          candidates.find(job => job.state?.type === "progress") ||
+          candidates.find(job => job.state?.type === "interrupted") ||
+          candidates[0];
+        if (running) {
+          return {
+            ok: true,
+            state: running.state,
+            tabId: tab.id,
+            attachedJobId: running.state.jobId || null,
+            otherTab: running.tabId !== tab.id,
+            resumable: running.state?.type === "interrupted",
+          };
+        }
+        // No live job: keep a finished/error result that belongs to this tab.
+        if (direct) return { ok: true, state: direct, tabId: tab.id };
+        return { ok: true, state: null, tabId: tab.id };
       }
       case "RESUME_JOB": {
         await jobsReady;

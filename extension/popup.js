@@ -238,6 +238,8 @@ function renderDone(state) {
 function renderQueued(state) {
   busy = true;
   showOnly("progressSection");
+  $("statusDot").classList.add("busy");
+  $("statusDot").classList.remove("ready");
   $("stage").textContent = "排队中";
   $("percent").textContent = `${state.position || 1}`;
   $("bar").style.width = "0%";
@@ -293,7 +295,7 @@ function applyState(state) {
     interruptedJobId = null;
     if ((state.error || "").includes("已取消")) {
       if (info) populate();
-      else loadInfo();
+      else startForm().catch(error => fail(error?.message || String(error)));
       return;
     }
     showOnly("progressSection");
@@ -342,6 +344,21 @@ async function switchPage(page) {
   populate();
 }
 
+// Check the native host and read the current page. This is only for the
+// initial form: when a job is already running, the popup must show progress
+// even if the active tab is not a Bilibili video page.
+async function startForm() {
+  const readiness = await send({ type: "GET_DEFAULTS" });
+  if (!readiness?.ok) {
+    $("statusDot").classList.add("bad");
+    fail(readiness?.error || "本地助手未安装或未运行");
+    return false;
+  }
+  defaults = readiness.defaults || null;
+  $("statusDot").classList.add("ready");
+  return await loadInfo();
+}
+
 async function initialize() {
   const port = chrome.runtime.connect({ name: "popup" });
   popupPort = port;
@@ -354,7 +371,10 @@ async function initialize() {
       return;
     }
     if (message.type === "JOB") {
-      if (message.tabId && currentTabId && message.tabId !== currentTabId) return;
+      // A job attached from another tab still belongs to this panel: compare by
+      // jobId, not by tabId, or its progress would freeze at the first frame.
+      if (currentJobId && message.jobId && message.jobId !== currentJobId) return;
+      if (!currentJobId && message.tabId && currentTabId && message.tabId !== currentTabId) return;
       currentJobId = message.jobId;
       applyState(message.state);
       return;
@@ -369,41 +389,26 @@ async function initialize() {
   $("keep").checked = saved.keep;
   $("directory").value = savedDirectory;
 
-  // Fail fast when the helper is missing: showing the full form only to error
-  // out on click is worse than a small, immediate explanation.
-  const readiness = await send({ type: "GET_DEFAULTS" });
-  if (!readiness?.ok) {
-    $("statusDot").classList.add("bad");
-    fail(readiness?.error || "本地助手未安装或未运行");
-    return;
-  }
-  defaults = readiness.defaults || null;
-  $("statusDot").classList.add("ready");
-
+  // 1. Restore any job first. It does not depend on the active page URL, so a
+  // running download stays visible after switching tabs.
   const state = await send({ type: "GET_TAB_STATE" });
   currentTabId = state?.tabId || null;
   const previous = state?.state;
 
-  if (previous && (previous.type === "progress" || previous.type === "queued")) {
+  if (previous && ["progress", "queued", "interrupted", "done"].includes(previous.type)) {
     currentJobId = previous.jobId || null;
-    applyState(previous);
-    // Load the form in the background so cancelling falls back cleanly.
-    loadInfo().then(ok => {
-      if (ok && previous.type === "progress") applyState(previous);
-    });
+    if (previous.type === "done") {
+      // Do NOT call loadInfo() here: populate() would replace the finished
+      // screen with the settings form.
+      renderDone(previous);
+    } else {
+      applyState(previous);
+    }
     return;
   }
 
-  if (previous && previous.type === "done") {
-    currentJobId = previous.jobId || null;
-    // Do NOT call loadInfo() here: it ends in populate(), which calls
-    // showOnly("form") and silently replaces the finished screen with the
-    // settings form. renderDone only needs the job state, not the page info.
-    renderDone(previous);
-    return;
-  }
-
-  await loadInfo();
+  // 2. Initial state only: check the native host and extract the page.
+  await startForm();
 }
 
 // ---------------------------------------------------------------------------
@@ -453,7 +458,7 @@ $("again").addEventListener("click", async () => {
   }
   busy = false;
   currentJobId = null;
-  await loadInfo();
+  await startForm();
 });
 
 $("retry").addEventListener("click", () => {
