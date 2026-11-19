@@ -11,8 +11,13 @@
 // popup always re-extracts the active page, and jobs are queued by the host
 // instead of rejected.
 
-const HOST = "com.opencode.bili_downloader";
-const MAX_AUTO_RESUME = 2;
+// The helper is a local daemon, not a registered Native Messaging host.
+// It scans this range for an empty port; the extension scans the same range and
+// identifies the process through GET /health.
+const HOST_APP = "bili-downloader";
+const HOST_PROTOCOL = 1;
+const HOST_PORTS = Array.from({ length: 40 }, (_, index) => 47821 + index);
+const HOST_EVENT_RETRY_MS = [1000, 2000, 4000, 8000, 10000];
 // Jobs that are still alive somewhere in the host. These must survive tab
 // navigation and even tab closure, otherwise switching to a non-target page
 // (or closing the original tab) makes a queued/interrupted job unreachable.
@@ -20,10 +25,15 @@ const ACTIVE_STATES = new Set(["progress", "queued", "interrupted"]);
 const JOB_STORE_KEY = "bili.jobs";
 let lastPersistError = "";
 
-let nativePort = null;
 let popupPort = null;
-let connecting = null;
 let lastDefaults = null;
+let hostBase = null;
+let hostLookup = null;
+let hostEvents = null;
+let hostEventRetry = 0;
+let hostEventTimer = null;
+let fallbackPollTimer = null;
+let reconcileTimer = null;
 
 /** jobId -> { tabId, bvid, payload, state, autoResumes } */
 const jobs = new Map();
@@ -32,10 +42,9 @@ const tabJobs = new Map();
 /** tabId -> last extracted video info (for retry after 403) */
 const infoCache = new Map();
 
-// MV3 service workers are killed when idle, and Chrome closes the native port
-// with them, which aborts the download. The helper resumes from its on-disk
-// segments, but only if we remember which job was running. So every state
-// change is mirrored into chrome.storage.local and reconciled on startup.
+// MV3 service workers are killed when idle. The helper is an independent
+// daemon now, so a sleeping worker does not stop the download; we just need to
+// remember which job was running and reconcile with GET /jobs on wake-up.
 // Only work that is still in flight (or interrupted mid-way) is worth keeping.
 //
 // A finished result is transient UI state: it is cleared after 3 seconds, or as
@@ -81,23 +90,34 @@ async function restoreJobs() {
   for (const [jobId, job] of Object.entries(saved)) {
     if (!job || !job.payload) continue;
     const type = job.state?.type;
-    if (type === "progress" || type === "queued" || type === "interrupted") {
-      // It cannot still be running: its death closed the native port. Report it
-      // as interrupted so the user gets a one-click resume instead of silence.
-      // Queued jobs never transferred a byte, but they must still surface —
-      // dropping them here is what made a queued second download vanish.
+    if (type === "progress" || type === "queued") {
+      // The daemon may still be downloading this job. Show its last known
+      // state while the first SSE snapshot confirms it; do not fabricate an
+      // "interrupted" screen just because the worker went to sleep.
+      jobs.set(jobId, {
+        ...job,
+        state: {
+          ...job.state,
+          type,
+          state: type,
+          jobId,
+          stage: "正在恢复任务",
+          detail: "正在连接本地助手",
+          percent: job.state.percent || 0,
+        },
+        resumable: false,
+      });
+      if (job.tabId) tabJobs.set(job.tabId, jobId);
+    } else if (type === "interrupted") {
       jobs.set(jobId, {
         ...job,
         state: {
           type: "interrupted",
           state: "interrupted",
           jobId,
-          stage: type === "queued" ? "排队时被中断" : "下载已中断",
+          stage: job.state.stage || "下载已中断",
           percent: job.state.percent || 0,
-          detail:
-            type === "queued"
-              ? "还没开始下载；点击继续即可开始"
-              : "浏览器回收了后台页面；已下载的分段仍然保留，可以续传",
+          detail: job.state.detail || "已下载的分段仍然保留，可以续传",
         },
         resumable: true,
       });
@@ -112,7 +132,17 @@ async function restoreJobs() {
   }
 }
 
-const jobsReady = restoreJobs();
+const jobsReady = restoreJobs().then(async () => {
+  // One snapshot on startup/reconnect. It discovers jobs started before this
+  // service worker woke up and gives the popup a truthful state immediately.
+  try {
+    const data = await hostRequest("/jobs", { timeout: 3000 });
+    applyHostSnapshot(data.jobs || []);
+  } catch (_) {
+    // The helper may not be running; the UI will show the usual hint.
+  }
+  if (activeJobsExist()) ensureHostEvents();
+});
 
 function postToPopup(message) {
   try {
@@ -228,110 +258,300 @@ function setJobState(jobId, state) {
 }
 
 // ---------------------------------------------------------------------------
-// Native messaging
+// Local HTTP host
 // ---------------------------------------------------------------------------
 
-function connectNative() {
-  if (nativePort) return Promise.resolve(nativePort);
-  if (connecting) return connecting;
-  connecting = new Promise(resolve => {
-    let port;
-    try {
-      port = chrome.runtime.connectNative(HOST);
-    } catch (error) {
-      connecting = null;
-      resolve({ error: error?.message || String(error) });
-      return;
-    }
-    nativePort = port;
-    port.onMessage.addListener(handleNativeMessage);
-    port.onDisconnect.addListener(() => {
-      const error = chrome.runtime.lastError?.message || "";
-      nativePort = null;
-      connecting = null;
-      const running = [...jobs.entries()].filter(([, job]) => job.state?.type === "progress");
-      if (!running.length) {
-        postToPopup({ type: "NATIVE_DOWN", error });
-        return;
-      }
-      // The host process died mid-download. It writes each segment at its final
-      // offset, so restarting continues where it stopped instead of from zero.
-      let resumed = 0;
-      for (const [jobId, job] of running) {
-        job.autoResumes = (job.autoResumes || 0) + 1;
-        if (job.autoResumes > MAX_AUTO_RESUME) {
-          setJobState(jobId, {
-            type: "error",
-            state: "error",
-            jobId,
-            error: `本地助手连接中断（${error || "未知原因"}），已自动重试 ${MAX_AUTO_RESUME} 次。` +
-              "请到扩展管理页重新加载扩展，或重新运行安装脚本。",
-          });
-          continue;
-        }
-        resumed++;
-        setJobState(jobId, {
-          type: "progress",
-          state: "progress",
-          jobId,
-          stage: "重新连接本地助手",
-          percent: job.state.percent || 0,
-          detail: "已保留已下载的分段，继续续传",
-        });
-        setTimeout(() => {
-          connectNative().then(port2 => {
-            if (port2?.error) return;
-            port2.postMessage({ type: "start", job: job.payload });
-          });
-        }, 800);
-      }
-      if (resumed) {
-        postToPopup({ type: "NATIVE_DOWN", error, resumed: true });
-      }
-    });
-    // The host sends nothing until asked, but the open port is what proves the
-    // manifest is installed; ask for defaults as a handshake + version probe.
-    port.postMessage({ type: "defaults" });
-    connecting = null;
-    resolve(port);
-  });
-  return connecting;
+function abortAfter(ms) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  return { signal: controller.signal, cancel: () => clearTimeout(timer) };
 }
 
-function handleNativeMessage(message) {
-  if (!message || typeof message !== "object") return;
-  switch (message.type) {
-    case "defaults":
-    case "status":
-      lastDefaults = message;
-      postToPopup({ type: "DEFAULTS", defaults: message });
-      return;
-    case "directory":
-      postToPopup({ type: "DIRECTORY", path: message.path || "" });
-      return;
-    case "progress":
-    case "done":
-    case "error":
-    case "queued": {
-      const jobId = message.jobId || "unknown";
-      if (message.type === "done") {
-        // A 403 on the media URL means the signed link expired; retry once with
-        // freshly extracted URLs instead of asking the user to do anything.
-      }
-      setJobState(jobId, message);
-      if (message.type === "error" && /HTTP 403|拒绝访问/.test(message.error || "")) {
-        retryWithFreshUrls(jobId);
-      }
-      return;
-    }
-    default:
-      return;
+async function fetchHost(url, options = {}, timeout = 4000) {
+  const abort = abortAfter(timeout);
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: abort.signal,
+      cache: "no-store",
+      headers: { "X-Bili-Client": "extension", ...(options.headers || {}) },
+    });
+  } finally {
+    abort.cancel();
   }
+}
+
+async function discoverHost() {
+  if (hostBase) return hostBase;
+  if (hostLookup) return hostLookup;
+  hostLookup = (async () => {
+    for (const port of HOST_PORTS) {
+      const base = `http://127.0.0.1:${port}`;
+      try {
+        const response = await fetchHost(`${base}/health`, {}, 350);
+        if (!response.ok) continue;
+        const info = await response.json();
+        if (info?.app === HOST_APP && info?.protocol === HOST_PROTOCOL) {
+          hostBase = base;
+          return base;
+        }
+      } catch (_) {
+        // Port is closed or belongs to another local service. Try the next.
+      }
+    }
+    return null;
+  })();
+  try {
+    return await hostLookup;
+  } finally {
+    hostLookup = null;
+  }
+}
+
+async function hostRequest(path, options = {}) {
+  const { timeout = 6000, ...fetchOptions } = options;
+  const headers = { ...(fetchOptions.headers || {}) };
+  if (fetchOptions.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
+  const execute = async base => {
+    const response = await fetchHost(base + path, { ...fetchOptions, headers }, timeout);
+    const text = await response.text();
+    let data = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch (_) {
+      throw new Error(`本地助手返回了无效数据（HTTP ${response.status}）`);
+    }
+    if (!response.ok || data?.ok === false) {
+      throw new Error(data?.error || `本地助手返回 HTTP ${response.status}`);
+    }
+    return data;
+  };
+
+  let base = await discoverHost();
+  if (!base) {
+    throw new Error("本地助手未运行。请先启动 Bili 下载器助手（安装脚本会设置开机启动）。");
+  }
+  try {
+    return await execute(base);
+  } catch (error) {
+    // Retry discovery for reads only. Replaying a POST could start the same
+    // download twice or open a second folder dialog.
+    if ((fetchOptions.method || "GET").toUpperCase() !== "GET") throw error;
+    hostBase = null;
+    const retryBase = await discoverHost();
+    if (!retryBase) throw error;
+    return await execute(retryBase);
+  }
+}
+
+const hostPost = (path, body = {}) =>
+  hostRequest(path, { method: "POST", body: JSON.stringify(body) });
+
+async function fetchDefaults() {
+  const data = await hostRequest("/defaults");
+  lastDefaults = data.defaults || data;
+  postToPopup({ type: "DEFAULTS", defaults: lastDefaults });
+  return lastDefaults;
+}
+
+function activeJobsExist() {
+  return [...jobs.values()].some(job => ACTIVE_STATES.has(job.state?.type));
+}
+
+function applyHostState(state) {
+  if (!state?.jobId) return;
+  let job = jobs.get(state.jobId);
+  if (!job) {
+    // Finished results for a job this worker never knew about would resurrect
+    // an old completion screen. Active jobs can still arrive after storage was
+    // cleared (for example a fresh service worker), so attach those.
+    if (state.type === "done" || state.type === "error") return;
+    job = {
+      tabId: null,
+      bvid: state.bvid || "",
+      payload: null,
+      state: null,
+      startedAt: state.updatedAt || Date.now(),
+      autoResumes: 0,
+    };
+    jobs.set(state.jobId, job);
+  }
+  setJobState(state.jobId, state);
+  if (state.type === "error" && /HTTP 403|拒绝访问/.test(state.error || "")) {
+    retryWithFreshUrls(state.jobId);
+  }
+}
+
+function applyHostSnapshot(states) {
+  const seen = new Set();
+  for (const state of states || []) {
+    if (!state?.jobId) continue;
+    seen.add(state.jobId);
+    applyHostState(state);
+  }
+  const now = Date.now();
+  let needReconcile = false;
+  for (const [jobId, job] of [...jobs.entries()]) {
+    if (!ACTIVE_STATES.has(job.state?.type) || seen.has(jobId)) continue;
+    if (now - (job.startedAt || 0) < 3000) {
+      // A job can be POSTed a few milliseconds before the hub records its
+      // first progress event. Recheck once after the grace period instead of
+      // declaring it dead immediately.
+      needReconcile = true;
+      continue;
+    }
+    setJobState(jobId, {
+      type: "interrupted",
+      state: "interrupted",
+      jobId,
+      stage: "本地助手没有该任务",
+      percent: job.state?.percent || 0,
+      detail: "本地助手可能已重启；点击继续可从已下载分段续传",
+      resumable: true,
+    });
+  }
+  if (needReconcile) scheduleSnapshotReconcile();
+  if (!activeJobsExist()) closeHostEvents();
+}
+
+function markHostDown(error) {
+  for (const [jobId, job] of [...jobs.entries()]) {
+    if (!ACTIVE_STATES.has(job.state?.type)) continue;
+    setJobState(jobId, {
+      type: "interrupted",
+      state: "interrupted",
+      jobId,
+      stage: "本地助手连接中断",
+      percent: job.state?.percent || 0,
+      detail: error?.message || "请启动本地助手后点击继续下载",
+      resumable: true,
+    });
+  }
+  hostBase = null;
+  closeHostEvents();
+  postToPopup({ type: "NATIVE_DOWN", error: error?.message || String(error) });
+}
+
+function scheduleSnapshotReconcile() {
+  if (reconcileTimer || !activeJobsExist()) return;
+  reconcileTimer = setTimeout(() => {
+    reconcileTimer = null;
+    if (!activeJobsExist()) return;
+    hostRequest("/jobs", { timeout: 3000 })
+      .then(data => applyHostSnapshot(data.jobs || []))
+      .catch(() => {});
+  }, 3500);
+}
+
+function closeHostEvents() {
+  if (reconcileTimer) {
+    clearTimeout(reconcileTimer);
+    reconcileTimer = null;
+  }
+  if (hostEvents) {
+    const source = hostEvents;
+    hostEvents = null;
+    try { source.close(); } catch (_) { /* already closed */ }
+  }
+  if (hostEventTimer) {
+    clearTimeout(hostEventTimer);
+    hostEventTimer = null;
+  }
+  if (fallbackPollTimer) {
+    clearInterval(fallbackPollTimer);
+    fallbackPollTimer = null;
+  }
+  hostEventRetry = 0;
+}
+
+function scheduleHostReconnect(error) {
+  if (!activeJobsExist()) {
+    closeHostEvents();
+    return;
+  }
+  hostEventRetry++;
+  if (hostEventRetry > HOST_EVENT_RETRY_MS.length) {
+    markHostDown(error);
+    return;
+  }
+  if (hostEventTimer) return;
+  const delay = HOST_EVENT_RETRY_MS[Math.min(hostEventRetry - 1, HOST_EVENT_RETRY_MS.length - 1)];
+  hostEventTimer = setTimeout(() => {
+    hostEventTimer = null;
+    connectHostEvents().catch(() => {});
+  }, delay);
+}
+
+async function connectHostEvents() {
+  if (hostEvents || hostEventTimer) return;
+  if (typeof EventSource !== "function") {
+    startFallbackPolling();
+    return;
+  }
+  const base = await discoverHost();
+  if (!base) {
+    scheduleHostReconnect(new Error("本地助手未运行"));
+    return;
+  }
+  let source;
+  try {
+    source = new EventSource(`${base}/events`);
+  } catch (error) {
+    scheduleHostReconnect(error);
+    return;
+  }
+  hostEvents = source;
+  source.onopen = () => {
+    hostEventRetry = 0;
+  };
+  source.addEventListener("snapshot", event => {
+    try {
+      const data = JSON.parse(event.data);
+      hostEventRetry = 0;
+      applyHostSnapshot(data.jobs || []);
+    } catch (_) {
+      /* malformed snapshot; the next reconnect will resend it */
+    }
+  });
+  source.addEventListener("job", event => {
+    try {
+      const state = JSON.parse(event.data);
+      applyHostState(state);
+      if (!activeJobsExist()) closeHostEvents();
+    } catch (_) {
+      /* malformed event; snapshot on reconnect is authoritative */
+    }
+  });
+  source.onerror = () => {
+    if (hostEvents !== source) return;
+    hostBase = null;
+    hostEvents = null;
+    try { source.close(); } catch (_) { /* already closed */ }
+    scheduleHostReconnect(new Error("SSE 连接中断"));
+  };
+}
+
+function ensureHostEvents() {
+  return connectHostEvents();
+}
+
+function startFallbackPolling() {
+  if (fallbackPollTimer) return;
+  const tick = async () => {
+    try {
+      const data = await hostRequest("/jobs", { timeout: 3000 });
+      applyHostSnapshot(data.jobs || []);
+    } catch (error) {
+      markHostDown(error);
+    }
+  };
+  fallbackPollTimer = setInterval(() => { tick().catch(() => {}); }, 1500);
+  tick().catch(() => {});
 }
 
 async function retryWithFreshUrls(jobId) {
   const job = jobs.get(jobId);
-  if (!job || job.refreshed) return;
+  if (!job || !job.payload || job.refreshed) return;
   job.refreshed = true;
   const info = infoCache.get(job.tabId);
   if (!info) return;
@@ -342,14 +562,17 @@ async function retryWithFreshUrls(jobId) {
   payload.video = video;
   payload.audio = audio;
   job.payload = payload;
-  const port = await connectNative();
-  if (port?.error) return;
+  try {
+    await hostPost("/jobs", payload);
+  } catch (_) {
+    return;
+  }
   setJobState(jobId, {
     type: "progress", state: "progress", jobId,
     stage: "刷新下载地址", percent: job.state?.percent || 0,
     detail: "原地址已过期，已重新获取并续传",
   });
-  port.postMessage({ type: "start", job: payload });
+  ensureHostEvents();
 }
 
 // ---------------------------------------------------------------------------
@@ -526,10 +749,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         await jobsReady;
         const job = jobs.get(message.jobId || "");
         if (!job) return { ok: false, error: "找不到该任务" };
-        const port = await connectNative();
-        if (port?.error) return { ok: false, error: "本地助手连接失败：" + port.error };
+        if (!job.payload) return { ok: false, error: "找不到续传所需的下载信息，请重新点下载" };
+        try {
+          await hostPost("/jobs", job.payload);
+        } catch (error) {
+          return { ok: false, error: "本地助手连接失败：" + (error?.message || String(error)) };
+        }
         // Reuse the stored payload: the helper's segment files are keyed by the
-        // stream URLs, so the same payload continues from the last byte.
+        // stream paths, so the same payload continues from the last byte.
         job.resumable = false;
         job.autoResumes = 0;
         job.finishedAt = 0;
@@ -538,62 +765,50 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           stage: "继续下载", percent: job.state.percent || 0,
           detail: "从已下载的分段继续",
         });
-        port.postMessage({ type: "start", job: job.payload });
+        ensureHostEvents();
         return { ok: true };
       }
       case "GET_DEFAULTS": {
-        const port = await connectNative();
-        if (port?.error) {
+        try {
+          const defaults = await fetchDefaults();
+          return { ok: true, defaults };
+        } catch (error) {
           return {
             ok: false,
-            error:
-              "本地助手未安装或未注册。请运行安装脚本（Windows 双击 install.bat，Linux 运行 ./install.sh），再重新加载扩展。",
-            detail: port.error,
+            error: `本地助手未运行：${error?.message || String(error)}`,
+            hint: "安装脚本会把助手设置为开机启动；也可以手动运行 bili-host serve。",
           };
         }
-        // The popup checks this before showing the form, so it needs a real
-        // answer rather than "request sent". Use the handshake value when it is
-        // already known, otherwise wait briefly for the host's first reply.
-        if (!lastDefaults) {
-          await new Promise(resolve => {
-            const deadline = Date.now() + 2500;
-            const tick = () => {
-              if (lastDefaults || Date.now() > deadline) resolve();
-              else setTimeout(tick, 50);
-            };
-            tick();
-          });
-        }
-        if (!lastDefaults) {
-          return { ok: false, error: "本地助手没有响应，请重新运行安装脚本后重启浏览器。" };
-        }
-        return { ok: true, defaults: lastDefaults };
       }
       case "CHOOSE_DIRECTORY": {
-        const port = await connectNative();
-        if (port?.error) return { ok: false, error: "本地助手不可用：" + port.error };
-        port.postMessage({ type: "choose_directory" });
-        return { ok: true };
+        try {
+          const data = await hostRequest("/choose-directory", {
+            method: "POST",
+            body: "{}",
+            timeout: 5 * 60 * 1000,
+          });
+          const path = data.path || "";
+          if (path) postToPopup({ type: "DIRECTORY", path });
+          return { ok: true, path };
+        } catch (error) {
+          return { ok: false, error: "无法打开文件夹选择器：" + (error?.message || String(error)) };
+        }
       }
       case "OPEN_FOLDER": {
-        const port = await connectNative();
-        if (port?.error) return { ok: false, error: port.error };
-        port.postMessage({ type: "open_folder", path: message.path || "" });
-        return { ok: true };
+        try {
+          await hostPost("/open-folder", { path: message.path || "" });
+          return { ok: true };
+        } catch (error) {
+          return { ok: false, error: "无法打开文件夹：" + (error?.message || String(error)) };
+        }
       }
       case "START_DOWNLOAD": {
         await jobsReady;
         const tab = await getActiveTab();
-        const port = await connectNative();
-        if (port?.error) {
-          return {
-            ok: false,
-            error: "本地助手连接失败：" + port.error,
-            hint: "请确认已运行安装脚本，并在扩展管理页重新加载扩展。",
-          };
-        }
         const jobId = message.job.id;
         const payload = { ...message.job, id: jobId };
+        // Record the job before POSTing. If the worker is suspended between the
+        // request and the response, the next wake-up can still reconcile it.
         jobs.set(jobId, {
           tabId: tab.id,
           bvid: payload.bvid,
@@ -605,20 +820,34 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         tabJobs.set(tab.id, jobId);
         badgeFor({ type: "progress", percent: 0 });
         persistJobs();
-        port.postMessage({ type: "start", job: payload });
+        try {
+          await hostPost("/jobs", payload);
+        } catch (error) {
+          dropJob(jobId);
+          return {
+            ok: false,
+            error: "本地助手连接失败：" + (error?.message || String(error)),
+            hint: "请确认本地助手正在运行，或重新运行安装脚本。",
+          };
+        }
+        ensureHostEvents();
         return { ok: true, jobId };
       }
       case "CANCEL_DOWNLOAD": {
-        const port = await connectNative();
-        if (port?.error) return { ok: false, error: port.error };
-        port.postMessage({ type: "cancel", jobId: message.jobId || "" });
-        return { ok: true };
+        try {
+          await hostPost("/cancel", { jobId: message.jobId || "" });
+          return { ok: true };
+        } catch (error) {
+          return { ok: false, error: error?.message || String(error) };
+        }
       }
       case "GET_HOST_STATUS": {
-        const port = await connectNative();
-        if (port?.error) return { ok: false, error: port.error };
-        port.postMessage({ type: "status" });
-        return { ok: true };
+        try {
+          const status = await hostRequest("/health");
+          return { ok: true, status };
+        } catch (error) {
+          return { ok: false, error: error?.message || String(error) };
+        }
       }
       default:
         return { ok: false, error: "未知操作" };

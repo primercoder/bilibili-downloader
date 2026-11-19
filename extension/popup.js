@@ -64,6 +64,15 @@ function fail(message) {
   $("statusDot").classList.remove("ready", "busy");
 }
 
+let actionErrorTimer = null;
+function showActionError(message) {
+  const box = $("actionError");
+  box.textContent = message;
+  box.classList.remove("hidden");
+  clearTimeout(actionErrorTimer);
+  actionErrorTimer = setTimeout(() => box.classList.add("hidden"), 6000);
+}
+
 // ---------------------------------------------------------------------------
 // form
 // ---------------------------------------------------------------------------
@@ -453,7 +462,25 @@ $("pageSelect").addEventListener("change", () => {
   switchPage(Number($("pageSelect").value)).catch(error => fail(error?.message || String(error)));
 });
 
-$("browse").addEventListener("click", () => send({ type: "CHOOSE_DIRECTORY" }));
+$("browse").addEventListener("click", async () => {
+  const button = $("browse");
+  button.disabled = true;
+  try {
+    const response = await send({ type: "CHOOSE_DIRECTORY" });
+    if (!response?.ok) {
+      showActionError(response?.error || "无法打开文件夹选择器");
+      return;
+    }
+    if (response.path) {
+      $("directory").value = response.path;
+      chrome.storage.local.set({ directory: response.path });
+    }
+  } catch (error) {
+    showActionError(error?.message || String(error));
+  } finally {
+    button.disabled = false;
+  }
+});
 
 $("cancel").addEventListener("click", async () => {
   if (!currentJobId) return;
@@ -480,9 +507,15 @@ $("retry").addEventListener("click", () => {
   initialize().catch(error => fail(error?.message || String(error)));
 });
 
-$("openFolder").addEventListener("click", () => {
+$("openFolder").addEventListener("click", async () => {
   const path = $("openFolder").dataset.path;
-  if (path) send({ type: "OPEN_FOLDER", path });
+  if (!path) return;
+  try {
+    const response = await send({ type: "OPEN_FOLDER", path });
+    if (!response?.ok) showActionError(response?.error || "无法打开文件夹");
+  } catch (error) {
+    showActionError(error?.message || String(error));
+  }
 });
 
 $("keep").addEventListener("change", () => chrome.storage.local.set({ keep: $("keep").checked }));

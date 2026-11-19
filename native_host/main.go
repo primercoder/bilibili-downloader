@@ -30,13 +30,19 @@ func main() {
 				}
 			}
 			return
+		case "serve":
+			logf("host starting server pid=%d version=%s", os.Getpid(), version)
+			serveHTTP()
+			logf("host server exiting")
+			return
 		case "version":
 			fmt.Printf("bili-downloader-host %s (%s)\n", version, runtimeArch)
 			return
 		case "--help", "-h", "help":
-			fmt.Print(`bili-downloader-host - 本地下载助手（由 Chrome 扩展自动启动）
+			fmt.Print(`bili-downloader-host - 本地下载助手
 
-一般不需要手动运行。可用参数：
+无参数或 serve：启动本地 HTTP 服务（默认 127.0.0.1:47821，自动向后寻找空闲端口）。
+其他参数：
   default-dir   打印系统下载目录
   pick-dir      弹出文件夹选择器并打印结果
   open <path>   在文件管理器中显示文件
@@ -45,7 +51,7 @@ func main() {
 			return
 		}
 	}
-	logf("host starting pid=%d version=%s", os.Getpid(), version)
-	serveHost()
-	logf("host exiting")
+	logf("host starting server pid=%d version=%s", os.Getpid(), version)
+	serveHTTP()
+	logf("host server exiting")
 }

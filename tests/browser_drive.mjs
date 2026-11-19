@@ -3,7 +3,7 @@
  * Drive the real extension inside Chromium over the DevTools protocol.
  *
  * Verifies what unit tests cannot:
- *   - Chrome accepts the native-messaging manifest and can spawn the helper;
+ *   - the local HTTP helper is reachable and returns defaults;
  *   - the page extractor returns usable streams on a live Bilibili page;
  *   - a download started from the extension produces a playable MP4;
  *   - a *second* download starts right after — the regression that used to
@@ -103,9 +103,9 @@ async function findExtensionId() {
       await session.ready;
       await sleep(900);
       const title = await session.eval("document.title");
-      const canNative = await session.eval("typeof chrome?.runtime?.connectNative");
+      const name = await session.eval("chrome.runtime.getManifest().name");
       session.close();
-      if (title?.includes("Bili") && canNative === "function") return id;
+      if (title?.includes("Bili") && name?.includes("Bili")) return id;
     } catch {
       /* not ours */
     }

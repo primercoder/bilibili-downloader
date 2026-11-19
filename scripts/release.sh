@@ -49,38 +49,31 @@ cat > "$NOTES" <<'EOF'
 
 | 你的系统 | 下载 |
 | --- | --- |
-| Windows 10 / 11（x64） | `bili-downloader-2.0.5-windows-x64.zip` |
-| Linux x86_64 | `bili-downloader-2.0.5-linux-x64.tar.gz` |
-| Linux ARM64 | `bili-downloader-2.0.5-linux-arm64.tar.gz` |
+| Windows 10 / 11（x64） | `bili-downloader-2.1.0-windows-x64.zip` |
+| Linux x86_64 | `bili-downloader-2.1.0-linux-x64.tar.gz` |
+| Linux ARM64 | `bili-downloader-2.1.0-linux-arm64.tar.gz` |
 
 每个包都完整可用：里面同时包含 Chrome 扩展、对应架构的本地助手程序和说明文档。
 不需要安装 Python、FFmpeg 或任何运行库，也不需要管理员 / root 权限。
 
-## 本次更新（2.0.5）
+## 本次更新（2.1.0）
 
-- 工具栏图标改为显示下载进度百分比，完成后显示 ✓。
-- 安装 / 卸载改为交互式：自动检测浏览器、列出改动、支持多选；
-  发现旧版本文件时再次确认覆盖 / 跳过 / 取消。
-- 安装完成后逐个浏览器显示扩展加载步骤；卸载时识别已注册浏览器和残留文件。
-- Windows 使用 `install.ps1` / `uninstall.ps1` 实现交互流程，仍可双击 `install.bat` / `uninstall.bat`。
-- 精简安装与卸载脚本输出，减少重复信息。
-- 修复浏览器检测：不再把旧版留下的空配置目录或 Snap 命令误判为普通 Chrome / Chromium。
-- 修复切到非目标网页后打开面板只报错、看不到下载进度的问题；有任务时不再检查当前网页。
-- 提升扩展版本号，确保 Chromium 重新加载新的后台脚本。
-- 支持番剧 / 影视页面：`ep`、`ss` 链接均可解析，有观看权限的剧集可在「选集」中切换并下载。
-- 修复排队中或已中断的任务在切换页面、关闭原标签后从面板消失的问题；活动任务现在会在任意页面保持可恢复。
+- 本地助手改为监听本地 HTTP 端口，扩展自动发现并连接；不再注册 Native Messaging，
+  不再写浏览器清单或注册表。
+- 安装 / 卸载简化为「复制助手 + 设置当前用户开机启动」，不需要选择浏览器或写配置。
+- 下载、进度、取消、续传、番剧选集和工具栏百分比继续沿用原有界面。
+- 修复 Windows 的「选择文件夹」和「打开所在文件夹」：
+  使用绝对路径调用 PowerShell / Explorer，文件夹对话框置顶，打开文件时自动定位到文件。
+- 文件夹选择请求不再受 6 秒超时限制，失败原因会显示在面板里。
+- 修复切到非目标网页后看不到下载进度，以及排队/中断任务在切页或关闭标签后丢失的问题。
 
 ## 包内结构
 
 ```
-bili-downloader-2.0.5-windows-x64\
-├── 先看这里.txt         # 快速开始
+bili-downloader-2.1.0-windows-x64\
 ├── install.bat / install.ps1
 ├── uninstall.bat / uninstall.ps1
-├── README.md            # 完整说明
-├── docs\
-│   ├── usage.md         # 使用与排错速查
-│   └── how-it-works.md  # 运行原理
+├── README.md            # 功能、安装与使用方法
 ├── extension\           # Chrome 扩展
 └── host\bili-host.exe   # 本地助手
 ```

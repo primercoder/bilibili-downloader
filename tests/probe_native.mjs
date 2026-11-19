@@ -1,9 +1,6 @@
 #!/usr/bin/env node
 /**
- * Probe whether Chrome can actually spawn the native host.
- *
- * Prints the raw reply, or the exact chrome.runtime.lastError message, which is
- * what tells "manifest not found" apart from "binary exited immediately".
+ * Probe whether the extension can reach the local HTTP helper.
  *
  *   node tests/probe_native.mjs
  */
@@ -72,25 +69,14 @@ const main = async () => {
   const result = await evalIn(
     tab.id,
     `(async () => {
-      if (!chrome.runtime.connectNative) return { step: "no permission" };
-      const port = chrome.runtime.connectNative("com.opencode.bili_downloader");
-      return await new Promise(resolve => {
-        let settled = false;
-        const finish = value => { if (!settled) { settled = true; resolve(value); } };
-        port.onMessage.addListener(message => finish({ step: "reply", message }));
-        port.onDisconnect.addListener(() =>
-          finish({ step: "disconnect", error: chrome.runtime.lastError?.message || "" }));
-        port.postMessage({ type: "defaults" });
-        setTimeout(() => finish({ step: "timeout" }), 5000);
-      });
+      const status = await chrome.runtime.sendMessage({ type: "GET_HOST_STATUS" });
+      const defaults = await chrome.runtime.sendMessage({ type: "GET_DEFAULTS" });
+      return { status, defaults };
     })()`,
   );
   console.log(JSON.stringify(result, null, 2));
-  const log = "/tmp/bili-downloader-host.log";
-  const fs = await import("node:fs");
-  if (fs.existsSync(log)) {
-    const lines = fs.readFileSync(log, "utf8").trim().split("\n").slice(-6);
-    console.log("--- host log tail ---\n" + lines.join("\n"));
+  if (!result?.status?.ok || !result?.defaults?.ok) {
+    throw new Error("本地 HTTP 助手不可达");
   }
 };
 

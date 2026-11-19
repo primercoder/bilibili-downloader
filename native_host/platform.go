@@ -64,13 +64,28 @@ func xdgDownloadDir() string {
 	return ""
 }
 
+func windowsRoot() string {
+	if root := os.Getenv("SystemRoot"); root != "" {
+		return root
+	}
+	return `C:\Windows`
+}
+
+func windowsPowerShell() string {
+	return filepath.Join(windowsRoot(), "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+}
+
+func windowsExplorer() string {
+	return filepath.Join(windowsRoot(), "explorer.exe")
+}
+
 func windowsKnownFolder() string {
 	script := `[Console]::OutputEncoding=[Text.Encoding]::UTF8; ` +
 		`$p=@("$env:USERPROFILE\Downloads"); ` +
 		`try{$k=Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders" -ErrorAction Stop; ` +
 		`$v=$k."{374DE290-123F-4565-9164-39C4925E467B}"; if($v){$p=@([Environment]::ExpandEnvironmentVariables($v))}}catch{}; ` +
 		`[Console]::Write($p[0])`
-	out, err := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", script).Output()
+	out, err := exec.Command(windowsPowerShell(), "-NoProfile", "-NonInteractive", "-Command", script).Output()
 	if err != nil {
 		return ""
 	}
@@ -125,13 +140,32 @@ func chooseDirectory() (string, error) {
 	initial := defaultDownloadDir()
 	switch runtime.GOOS {
 	case "windows":
+		powershell := windowsPowerShell()
+		if _, err := os.Stat(powershell); err != nil {
+			return "", fmt.Errorf("找不到 Windows PowerShell：%s", powershell)
+		}
+		// Use absolute system paths so this works whether the helper was started
+		// by the login item or manually. The hidden topmost owner form makes the
+		// dialog appear in front of the browser (the old version looked
+		// unresponsive because it could open behind the window).
 		script := `Add-Type -AssemblyName System.Windows.Forms; ` +
+			`$owner=New-Object System.Windows.Forms.Form; ` +
+			`$owner.Text='Bili 下载器'; ` +
+			`$owner.TopMost=$true; ` +
+			`$owner.ShowInTaskbar=$false; ` +
+			`$owner.FormBorderStyle='FixedToolWindow'; ` +
+			`$owner.StartPosition='CenterScreen'; ` +
+			`$owner.Opacity=0; ` +
+			`$owner.Show(); ` +
 			`$d=New-Object System.Windows.Forms.FolderBrowserDialog; ` +
 			`$d.Description='选择 Bili 下载器保存位置'; ` +
 			`$d.SelectedPath=$env:INITIAL_DIR; ` +
-			`if($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK){` +
+			`$d.ShowNewFolderButton=$true; ` +
+			`$result=$d.ShowDialog($owner); ` +
+			`$owner.Close(); ` +
+			`if($result -eq [System.Windows.Forms.DialogResult]::OK){` +
 			`[Console]::OutputEncoding=[Text.Encoding]::UTF8; [Console]::Write($d.SelectedPath)}`
-		cmd := exec.Command("powershell", "-NoProfile", "-STA", "-Command", script)
+		cmd := exec.Command(powershell, "-NoProfile", "-STA", "-ExecutionPolicy", "Bypass", "-Command", script)
 		cmd.Env = append(os.Environ(), "INITIAL_DIR="+initial)
 		hideWindow(cmd)
 		out, err := cmd.Output()
@@ -205,19 +239,37 @@ func openFolder(path string) error {
 	if path == "" {
 		return nil
 	}
-	info, err := os.Stat(path)
+	absolute, err := filepath.Abs(path)
 	if err != nil {
-		return err
+		return fmt.Errorf("无法解析文件路径：%v", err)
 	}
+	info, err := os.Stat(absolute)
+	if err != nil {
+		return fmt.Errorf("文件或文件夹不存在：%s", absolute)
+	}
+	path = absolute
 	target := path
 	if !info.IsDir() {
 		target = filepath.Dir(path)
 	}
 	switch runtime.GOOS {
 	case "windows":
-		cmd := exec.Command("explorer", target)
-		hideWindow(cmd)
-		return cmd.Start()
+		// Do NOT set CREATE_NO_WINDOW here: explorer.exe can silently do
+		// nothing when launched that way. Also use /select for files so the
+		// finished video is highlighted, not just its folder.
+		explorer := windowsExplorer()
+		if _, err := os.Stat(explorer); err != nil {
+			explorer = "explorer.exe"
+		}
+		args := []string{target}
+		if !info.IsDir() {
+			args = []string{"/select," + target}
+		}
+		cmd := exec.Command(explorer, args...)
+		if err := cmd.Start(); err != nil {
+			return fmt.Errorf("无法启动文件管理器：%v", err)
+		}
+		return nil
 	case "darwin":
 		return exec.Command("open", target).Start()
 	default:

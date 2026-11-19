@@ -41,6 +41,16 @@ func (m *jobManager) start(payload map[string]any) {
 	}
 
 	m.mu.Lock()
+	if m.running != nil && m.running.id == job.id {
+		m.mu.Unlock()
+		return
+	}
+	for _, queued := range m.queue {
+		if queued.id == job.id {
+			m.mu.Unlock()
+			return
+		}
+	}
 	if m.running != nil {
 		m.queue = append(m.queue, job)
 		position := len(m.queue)

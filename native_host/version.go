@@ -2,6 +2,6 @@ package main
 
 import "runtime"
 
-const version = "2.0.2"
+const version = "2.1.0"
 
 var runtimeArch = runtime.GOOS + "/" + runtime.GOARCH

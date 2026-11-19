@@ -17,16 +17,29 @@
 - 后台下载：关掉面板不影响任务；工具栏图标显示**下载进度百分比**，完成后显示 ✓。
 - 可选保留 `.m4s` 中间文件；默认合成后自动清理。
 - 完成后可在面板里直接「打开所在文件夹」。
-- **交互式安装 / 卸载**：自动检测浏览器，列出每个浏览器会改动的文件，支持多选；
-  发现旧版本文件时再次确认覆盖或取消。不需要任何命令行参数。
+- **本地 HTTP 助手**：监听 `127.0.0.1` 的本地端口，扩展自动发现并连接；
+  不需要注册 Native Messaging，也不需要写浏览器清单或注册表。
+- **一键安装 / 卸载**：复制助手并设置当前用户开机启动，不需要命令行参数。
+
+## 本地助手如何连接
+
+扩展不注册 Chrome Native Messaging，也不写浏览器清单或注册表。本地助手是独立的用户进程：
+
+- 监听 `127.0.0.1` 的 `47821–47860`，自动选择空闲端口
+- 扩展扫描端口，用 `GET /health` 识别助手
+- 下载任务通过 `POST /jobs` 提交
+- 进度通过 SSE `GET /events` 推送；连接建立或重连时先取一次 `/jobs` 快照
+- 没有活动任务时断开 SSE，助手仍在后台继续下载
+
+安装脚本只负责复制助手并设置当前用户开机启动。
 
 ## 下载哪个包
 
 | 你的系统 | 下载 |
 | --- | --- |
-| Windows 10 / 11（x64） | `bili-downloader-2.0.5-windows-x64.zip` |
-| Linux x86_64 | `bili-downloader-2.0.5-linux-x64.tar.gz` |
-| Linux ARM64 | `bili-downloader-2.0.5-linux-arm64.tar.gz` |
+| Windows 10 / 11（x64） | `bili-downloader-2.1.0-windows-x64.zip` |
+| Linux x86_64 | `bili-downloader-2.1.0-linux-x64.tar.gz` |
+| Linux ARM64 | `bili-downloader-2.1.0-linux-arm64.tar.gz` |
 
 每个包都完整可用：里面同时包含扩展、对应架构的本地助手和说明文档。
 如果你的机器是 32 位系统，本扩展不提供对应助手，请使用 64 位系统。
@@ -37,21 +50,19 @@
 
 ### 1. 解压
 
-下载 `bili-downloader-2.0.5-windows-x64.zip`，右键 → **全部解压到当前文件夹**。
+下载 `bili-downloader-2.1.0-windows-x64.zip`，右键 → **全部解压到当前文件夹**。
 
 > 一定要先解压。不要在压缩软件窗口里直接双击 `install.bat`，那样安装会失败。
 
 解压后目录如下：
 
 ```
-bili-downloader-2.0.5-windows-x64\
-├── 先看这里.txt
+bili-downloader-2.1.0-windows-x64\
 ├── install.bat          ← 双击这个
 ├── install.ps1          ← 安装流程（由 bat 调用）
 ├── uninstall.bat        ← 双击卸载
 ├── uninstall.ps1
-├── README.md
-├── docs\
+├── README.md            ← 功能、安装与使用方法
 ├── extension\
 └── host\
     └── bili-host.exe
@@ -59,16 +70,13 @@ bili-downloader-2.0.5-windows-x64\
 
 ### 2. 双击 `install.bat`
 
-脚本是**交互式**的，会依次让你确认：
+脚本会：
 
-1. 自动检测本机已安装的 Chromium 系浏览器，并列出每个浏览器安装后会被改动的
-   文件与注册表项；
-2. 输入编号**多选**要安装的浏览器（`all` 全选，`1 3` 或 `1,3` 选多个）；
-3. 确认后如果发现目标位置已有旧文件，会再次询问：
-   **覆盖 / 跳过有旧文件的浏览器 / 取消**；
-4. 安装完成后，逐个浏览器显示「加载扩展」的具体步骤。
+1. 把本地助手复制到 `%LOCALAPPDATA%\BiliDownloader`；
+2. 设置它在当前用户登录时隐藏启动；
+3. 立即启动助手。
 
-不需要任何命令行参数，也不需要管理员权限。如果杀毒软件弹窗，选择「允许」。
+不需要选择浏览器，也不需要写注册表或 native messaging 清单。如果杀毒软件弹窗，选择「允许」。
 
 ### 3. 加载扩展
 
@@ -78,9 +86,9 @@ bili-downloader-2.0.5-windows-x64\
 4. 选择解压目录里的 **`extension`** 文件夹（不是它的上级目录）。
 5. 工具栏出现粉色 **B** 图标。
 
-### 4. 重启浏览器
+### 4. 重新加载扩展
 
-完全退出浏览器再打开一次，让新注册的本地助手生效。
+如果扩展已经在运行，到扩展管理页点一下「重新加载」即可。助手是独立进程，不需要为了注册信息重启浏览器。
 
 ## Linux 安装
 
@@ -92,12 +100,12 @@ bili-downloader-2.0.5-windows-x64\
 
 ```bash
 # x86_64
-tar -xzf bili-downloader-2.0.5-linux-x64.tar.gz
-cd bili-downloader-2.0.5-linux-x64
+tar -xzf bili-downloader-2.1.0-linux-x64.tar.gz
+cd bili-downloader-2.1.0-linux-x64
 
 # ARM64
-tar -xzf bili-downloader-2.0.5-linux-arm64.tar.gz
-cd bili-downloader-2.0.5-linux-arm64
+tar -xzf bili-downloader-2.1.0-linux-arm64.tar.gz
+cd bili-downloader-2.1.0-linux-arm64
 ```
 
 ### 2. 运行安装脚本
@@ -112,11 +120,10 @@ cd bili-downloader-2.0.5-linux-arm64
 chmod +x install.sh && ./install.sh
 ```
 
-脚本会自动识别系统架构和浏览器，然后列出每个浏览器会改动的文件，让你
-**多选**安装；如果目标目录里已有旧版本文件，会再次确认**覆盖 / 跳过 / 取消**。
-脚本不需要任何命令行参数，也不需要 `sudo`。
+脚本会复制助手，并通过当前用户的桌面自启动（`~/.config/autostart`）让它开机运行。
+不需要 `sudo`，也不需要选择浏览器或写 native messaging 清单。
 
-Snap / Flatpak 版 Chromium 的沙箱读不到 `~/.local`，脚本会自动把助手装到它们能访问的目录，无需手动配置。
+Snap / Flatpak 版 Chromium 通过宿主机的 `127.0.0.1` 访问助手，不再需要单独处理沙箱目录。
 
 ### 3. 加载扩展
 
@@ -126,9 +133,9 @@ Snap / Flatpak 版 Chromium 的沙箱读不到 `~/.local`，脚本会自动把�
 4. 选择本目录下的 **`extension`** 文件夹。
 5. 工具栏出现粉色 **B** 图标。
 
-### 4. 重启浏览器
+### 4. 重新加载扩展
 
-完全退出浏览器再打开一次，让本地助手注册生效。
+到扩展管理页点一下「重新加载」即可；助手服务会由系统自动启动。
 
 ## 使用
 
@@ -154,14 +161,15 @@ Snap / Flatpak 版 Chromium 的沙箱读不到 `~/.local`，脚本会自动把�
 | 合成 MP4 | 内置引擎重排文件，不重新编码 | 等待，通常 1~2 秒 |
 | 已下载 | 已校验通过 | 点「打开所在文件夹」 |
 | 排队中 | 前面的任务完成后自动开始 | 等待 |
-| 下载已中断 | 浏览器回收了扩展后台页面 | 点「继续下载」续传 |
+| 下载已中断 | 本地助手退出或连接中断 | 点「继续下载」续传 |
 | 下载失败 | 红框内会显示具体原因 | 见下方常见问题 |
 
 ## 常见问题
 
-**提示「本地助手未安装或未注册」**
-先运行安装脚本（Windows 双击 `install.bat`，Linux 运行 `./install.sh`），然后完全退出浏览器再打开。
-仍不行时，到 `chrome://extensions/` 确认扩展 ID 为 `khkbfeoekeinbdgbicojpgfidfihfffc`，再重新运行一次安装脚本。
+**提示「本地助手未运行」**
+先运行安装脚本（Windows 双击 `install.bat`，Linux 运行 `./install.sh`）。
+安装脚本会把助手设置为当前用户开机启动，也可以手动运行 `bili-host serve`。
+如果浏览器没有反应，到扩展管理页点一下「重新加载」。
 
 **清晰度只有 480P**
 清晰度取决于账号权限：未登录一般最高 480P，登录后 1080P，大会员才有 1080P+ / 4K / HDR。
@@ -181,8 +189,7 @@ Snap / Flatpak 版 Chromium 的沙箱读不到 `~/.local`，脚本会自动把�
 
 ## 卸载
 
-Windows：双击 `uninstall.bat`。脚本同样是交互式的：先检测已注册的浏览器和残留文件，
-让你多选要卸载的浏览器，确认后删除注册表项、清单和助手文件，最后提示你到浏览器里移除扩展。
+Windows：双击 `uninstall.bat`。脚本会停止助手、删除开机启动项和助手文件。
 
 Linux：
 
@@ -190,7 +197,7 @@ Linux：
 ./uninstall.sh
 ```
 
-同样会列出浏览器、标出哪些目录里还有安装文件，让你多选后确认卸载。
+脚本会停止自启动进程，删除助手和临时文件。
 卸载完成后，到 `chrome://extensions/`（或对应浏览器的扩展管理页）移除「Bili 下载器」。
 
 ## 说明
@@ -209,8 +216,7 @@ Linux：
 bash scripts/build.sh
 ```
 
-产物在 `dist/`：Windows x64、Linux x64、Linux ARM64 三个平台包。详细实现见
-[docs/how-it-works.md](docs/how-it-works.md)。
+产物在 `dist/`：Windows x64、Linux x64、Linux ARM64 三个平台包。
 
 ## 许可
 

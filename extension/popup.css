@@ -221,3 +221,15 @@ input[role=switch]:checked:after { left: 16px; }
   overflow-wrap: anywhere;
   line-height: 1.5;
 }
+
+.action-error {
+  margin-top: 9px;
+  padding: 7px 9px;
+  border-radius: 6px;
+  background: #fdf2f2;
+  border: 1px solid #f8d4d4;
+  color: #b42318;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
