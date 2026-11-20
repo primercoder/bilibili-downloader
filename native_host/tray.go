@@ -176,12 +176,13 @@ func trayReady() {
 					showHint("开机自启设置失败：" + err.Error())
 					continue
 				}
+				// The check mark is the state indicator: a "已开启 / 已关闭"
+				// line added nothing and vanished on its own, which just looked
+				// like a glitch. Only failures need a message.
 				if enable {
 					autoItem.Check()
-					showHint("已设置开机自启")
 				} else {
 					autoItem.Uncheck()
-					showHint("已取消开机自启")
 				}
 			case <-quitItem.ClickedCh:
 				shutdown()

@@ -42,9 +42,9 @@ Windows 不需要安装脚本，双击 `host\bili-host.exe` 即可；Linux 另�
 
 | 你的系统 | 下载 |
 | --- | --- |
-| Windows 10 / 11（x64） | `bili-downloader-2.2.0-windows-x64.zip` |
-| Linux x86_64 | `bili-downloader-2.2.0-linux-x64.tar.gz` |
-| Linux ARM64 | `bili-downloader-2.2.0-linux-arm64.tar.gz` |
+| Windows 10 / 11（x64） | `bili-downloader-2.2.1-windows-x64.zip` |
+| Linux x86_64 | `bili-downloader-2.2.1-linux-x64.tar.gz` |
+| Linux ARM64 | `bili-downloader-2.2.1-linux-arm64.tar.gz` |
 
 每个包都完整可用：里面同时包含扩展、对应架构的本地助手和说明文档。
 如果你的机器是 32 位系统，本扩展不提供对应助手，请使用 64 位系统。
@@ -55,14 +55,14 @@ Windows 不需要安装脚本，双击 `host\bili-host.exe` 即可；Linux 另�
 
 ### 1. 解压
 
-下载 `bili-downloader-2.2.0-windows-x64.zip`，右键 → **全部解压到当前文件夹**。
+下载 `bili-downloader-2.2.1-windows-x64.zip`，右键 → **全部解压到当前文件夹**。
 
 > 一定要先解压，不要在压缩软件窗口里直接运行。
 
 解压后目录如下：
 
 ```
-bili-downloader-2.2.0-windows-x64\
+bili-downloader-2.2.1-windows-x64\
 ├── README.md
 ├── extension\
 └── host\
@@ -82,7 +82,7 @@ bili-downloader-2.2.0-windows-x64\
 ### 3. 开机自启（可选）
 
 右键托盘图标 → 菜单里勾选 **「开机自启」**。它会在当前用户下写一个启动项，
-不需要管理员权限；再次点击即取消。
+不需要管理员权限；再次点击即取消。菜单项前面的对勾就是当前状态。
 
 ### 4. 加载扩展
 
@@ -104,12 +104,12 @@ bili-downloader-2.2.0-windows-x64\
 
 ```bash
 # x86_64
-tar -xzf bili-downloader-2.2.0-linux-x64.tar.gz
-cd bili-downloader-2.2.0-linux-x64
+tar -xzf bili-downloader-2.2.1-linux-x64.tar.gz
+cd bili-downloader-2.2.1-linux-x64
 
 # ARM64
-tar -xzf bili-downloader-2.2.0-linux-arm64.tar.gz
-cd bili-downloader-2.2.0-linux-arm64
+tar -xzf bili-downloader-2.2.1-linux-arm64.tar.gz
+cd bili-downloader-2.2.1-linux-arm64
 ```
 
 ### 2. 运行助手

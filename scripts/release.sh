@@ -49,31 +49,34 @@ cat > "$NOTES" <<'EOF'
 
 | 你的系统 | 下载 |
 | --- | --- |
-| Windows 10 / 11（x64） | `bili-downloader-2.2.0-windows-x64.zip` |
-| Linux x86_64 | `bili-downloader-2.2.0-linux-x64.tar.gz` |
-| Linux ARM64 | `bili-downloader-2.2.0-linux-arm64.tar.gz` |
+| Windows 10 / 11（x64） | `bili-downloader-2.2.1-windows-x64.zip` |
+| Linux x86_64 | `bili-downloader-2.2.1-linux-x64.tar.gz` |
+| Linux ARM64 | `bili-downloader-2.2.1-linux-arm64.tar.gz` |
 
 每个包都完整可用：里面同时包含 Chrome 扩展、对应架构的本地助手程序和说明文档。
 不需要安装 Python、FFmpeg 或任何运行库，也不需要管理员 / root 权限。
 
-## 本次更新（2.2.0）
+## 本次更新（2.2.1）
+
+- 修复托盘菜单里开关「开机自启」后多出一行「已开启 / 已关闭」提示的问题。
+  状态本来就由菜单项前面的对勾表示，临时提示既多余又会在几秒后自己消失，
+  看起来像异常。现在成功切换只更新对勾，只有失败时才显示原因。
+
+## 2.2.0 主要变化（回顾）
 
 - 本地助手变成托盘应用：双击即运行，不再弹出黑色控制台窗口。
 - 托盘图标反映状态（空闲 / 下载 / 合成），菜单可查看端口、打开下载文件夹、
   开关开机自启、退出。
-- **移除 Windows 安装脚本**：不需要任何安装步骤，双击 `host\bili-host.exe` 即可。
-  开机自启在托盘菜单里勾选，写入当前用户启动项，无需管理员权限。
-- 修复 Windows「选择文件夹」：改用系统 Shell 的文件夹浏览器（不依赖 PowerShell），
-  对话框归属浏览器窗口，不会再跑到后面或直接报错。
+- 移除 Windows 安装脚本：双击 `host\bili-host.exe` 即可，无需任何安装步骤。
+- 修复 Windows「选择文件夹」：改用系统 Shell 的文件夹浏览器（不依赖 PowerShell）。
 - 修复 Windows「打开所在文件夹」：改用 Explorer 的 `/select` 定位文件。
 - 默认下载目录改用 Shell 已知文件夹 API，正确尊重「下载」被重定向的情况。
 - 助手改为单实例：重复启动会提示已在运行，而不是再开一个进程。
-- Linux 支持托盘（StatusNotifierItem），并保留可选的安装脚本。
 
 ## 包内结构
 
 ```
-bili-downloader-2.2.0-windows-x64\
+bili-downloader-2.2.1-windows-x64\
 ├── README.md            # 功能、安装与使用方法
 ├── extension\           # Chrome 扩展
 └── host\bili-host.exe   # 本地助手（双击运行）
