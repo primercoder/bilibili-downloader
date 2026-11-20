@@ -19,7 +19,9 @@
 - 完成后可在面板里直接「打开所在文件夹」。
 - **本地 HTTP 助手**：监听 `127.0.0.1` 的本地端口，扩展自动发现并连接；
   不需要注册 Native Messaging，也不需要写浏览器清单或注册表。
-- **一键安装 / 卸载**：复制助手并设置当前用户开机启动，不需要命令行参数。
+- **托盘应用**：助手常驻系统托盘，图标颜色反映状态（空闲 / 下载 / 合成），
+  菜单可打开下载文件夹、开关开机自启、退出。
+- **双击即用**：Windows 上双击 `bili-host.exe` 即可，没有控制台窗口，不需要安装脚本。
 
 ## 本地助手如何连接
 
@@ -31,7 +33,8 @@
 - 进度通过 SSE `GET /events` 推送；连接建立或重连时先取一次 `/jobs` 快照
 - 没有活动任务时断开 SSE，助手仍在后台继续下载
 
-安装脚本只负责复制助手并设置当前用户开机启动。
+助手和扩展互不依赖启动顺序：助手先在托盘启动，扩展每次打开面板都会重新发现它。
+Windows 不需要安装脚本，双击 `host\bili-host.exe` 即可；Linux 另附可选的 `install.sh`。
 
 完整的下载逻辑、前后端交互、合成与校验等技术细节见 [TECH.md](TECH.md)。
 
@@ -39,9 +42,9 @@
 
 | 你的系统 | 下载 |
 | --- | --- |
-| Windows 10 / 11（x64） | `bili-downloader-2.1.0-windows-x64.zip` |
-| Linux x86_64 | `bili-downloader-2.1.0-linux-x64.tar.gz` |
-| Linux ARM64 | `bili-downloader-2.1.0-linux-arm64.tar.gz` |
+| Windows 10 / 11（x64） | `bili-downloader-2.2.0-windows-x64.zip` |
+| Linux x86_64 | `bili-downloader-2.2.0-linux-x64.tar.gz` |
+| Linux ARM64 | `bili-downloader-2.2.0-linux-arm64.tar.gz` |
 
 每个包都完整可用：里面同时包含扩展、对应架构的本地助手和说明文档。
 如果你的机器是 32 位系统，本扩展不提供对应助手，请使用 64 位系统。
@@ -52,35 +55,36 @@
 
 ### 1. 解压
 
-下载 `bili-downloader-2.1.0-windows-x64.zip`，右键 → **全部解压到当前文件夹**。
+下载 `bili-downloader-2.2.0-windows-x64.zip`，右键 → **全部解压到当前文件夹**。
 
-> 一定要先解压。不要在压缩软件窗口里直接双击 `install.bat`，那样安装会失败。
+> 一定要先解压，不要在压缩软件窗口里直接运行。
 
 解压后目录如下：
 
 ```
-bili-downloader-2.1.0-windows-x64\
-├── install.bat          ← 双击这个
-├── install.ps1          ← 安装流程（由 bat 调用）
-├── uninstall.bat        ← 双击卸载
-├── uninstall.ps1
-├── README.md            ← 功能、安装与使用方法
+bili-downloader-2.2.0-windows-x64\
+├── README.md
 ├── extension\
 └── host\
     └── bili-host.exe
 ```
 
-### 2. 双击 `install.bat`
+### 2. 双击 `host\bili-host.exe`
 
-脚本会：
+就这样，没有安装脚本，也不需要命令行参数：
 
-1. 把本地助手复制到 `%LOCALAPPDATA%\BiliDownloader`；
-2. 设置它在当前用户登录时隐藏启动；
-3. 立即启动助手。
+- 助手是一个**托盘程序**，双击后不会弹出黑色控制台窗口
+- 它会在系统托盘区出现一个粉色 B 图标
+- 扩展会自动找到它（本地端口 `47821–47860`）
 
-不需要选择浏览器，也不需要写注册表或 native messaging 清单。如果杀毒软件弹窗，选择「允许」。
+如果 Windows 提示「Windows 已保护你的电脑」，点「更多信息」→「仍要运行」。
 
-### 3. 加载扩展
+### 3. 开机自启（可选）
+
+右键托盘图标 → 菜单里勾选 **「开机自启」**。它会在当前用户下写一个启动项，
+不需要管理员权限；再次点击即取消。
+
+### 4. 加载扩展
 
 1. 打开 `chrome://extensions/`（Edge 是 `edge://extensions/`）。
 2. 打开右上角 **「开发者模式」**。
@@ -88,9 +92,7 @@ bili-downloader-2.1.0-windows-x64\
 4. 选择解压目录里的 **`extension`** 文件夹（不是它的上级目录）。
 5. 工具栏出现粉色 **B** 图标。
 
-### 4. 重新加载扩展
-
-如果扩展已经在运行，到扩展管理页点一下「重新加载」即可。助手是独立进程，不需要为了注册信息重启浏览器。
+> 助手和扩展互不依赖启动顺序：先开哪个都行，扩展每次打开面板都会重新查找助手。
 
 ## Linux 安装
 
@@ -102,30 +104,29 @@ bili-downloader-2.1.0-windows-x64\
 
 ```bash
 # x86_64
-tar -xzf bili-downloader-2.1.0-linux-x64.tar.gz
-cd bili-downloader-2.1.0-linux-x64
+tar -xzf bili-downloader-2.2.0-linux-x64.tar.gz
+cd bili-downloader-2.2.0-linux-x64
 
 # ARM64
-tar -xzf bili-downloader-2.1.0-linux-arm64.tar.gz
-cd bili-downloader-2.1.0-linux-arm64
+tar -xzf bili-downloader-2.2.0-linux-arm64.tar.gz
+cd bili-downloader-2.2.0-linux-arm64
 ```
 
-### 2. 运行安装脚本
+### 2. 运行助手
 
 ```bash
-./install.sh
+chmod +x host/bili-host-linux-*
+./host/bili-host-linux-amd64      # ARM64 机器用 bili-host-linux-arm64
 ```
 
-没有执行权限时：
+助手是托盘程序，运行后会在系统托盘区出现一个图标，同时监听本地端口。
+不需要 `sudo`，不需要 systemd，也不会写任何浏览器配置。
+
+如果你想安装到固定位置并开机自启，可以运行附带的脚本（可选）：
 
 ```bash
-chmod +x install.sh && ./install.sh
+./install.sh    # 复制到 ~/.local/share/bili-downloader 并设置登录自启
 ```
-
-脚本会复制助手，并通过当前用户的桌面自启动（`~/.config/autostart`）让它开机运行。
-不需要 `sudo`，也不需要选择浏览器或写 native messaging 清单。
-
-Snap / Flatpak 版 Chromium 通过宿主机的 `127.0.0.1` 访问助手，不再需要单独处理沙箱目录。
 
 ### 3. 加载扩展
 
@@ -135,9 +136,8 @@ Snap / Flatpak 版 Chromium 通过宿主机的 `127.0.0.1` 访问助手，不再
 4. 选择本目录下的 **`extension`** 文件夹。
 5. 工具栏出现粉色 **B** 图标。
 
-### 4. 重新加载扩展
-
-到扩展管理页点一下「重新加载」即可；助手服务会由系统自动启动。
+> 托盘图标需要桌面环境的 StatusNotifierItem 支持（GNOME 需安装 AppIndicator 扩展）。
+> 即使没有托盘图标，助手仍然照常工作，扩展可以正常下载。
 
 ## 使用
 
@@ -169,9 +169,16 @@ Snap / Flatpak 版 Chromium 通过宿主机的 `127.0.0.1` 访问助手，不再
 ## 常见问题
 
 **提示「本地助手未运行」**
-先运行安装脚本（Windows 双击 `install.bat`，Linux 运行 `./install.sh`）。
-安装脚本会把助手设置为当前用户开机启动，也可以手动运行 `bili-host serve`。
-如果浏览器没有反应，到扩展管理页点一下「重新加载」。
+Windows 双击 `host\bili-host.exe`；Linux 运行 `./host/bili-host-linux-amd64`。
+助手启动后托盘区会出现图标。如果浏览器没有反应，到扩展管理页点一下「重新加载」。
+
+**托盘图标没出现，但下载能用**
+Linux 上的 GNOME 默认不显示 StatusNotifierItem，需要安装 AppIndicator 扩展。
+Windows 上如果图标被折叠，点任务栏的「^」把它拖出来。
+
+**Windows 双击 bili-host.exe 没有任何反应**
+说明已有一个助手在运行（助手是单实例）。此时任务栏托盘区应该已经有图标；
+如果确实没有，查看 `%TEMP%\bili-downloader-host.log`。
 
 **清晰度只有 480P**
 清晰度取决于账号权限：未登录一般最高 480P，登录后 1080P，大会员才有 1080P+ / 4K / HDR。
@@ -183,24 +190,18 @@ Snap / Flatpak 版 Chromium 通过宿主机的 `127.0.0.1` 访问助手，不再
 **提示「媒体地址已过期（HTTP 403）」**
 扩展会自动刷新一次播放地址并续传；仍失败时刷新视频页后重新下载。
 
-**Windows 双击 `install.bat` 一闪而过**
-通常是直接在压缩包里运行的。请先完整解压，再运行。
-
 **支持 macOS 吗**
 当前只发布 Windows 和 Linux 包。macOS 可以从源码构建，但没有安装向导。
 
 ## 卸载
 
-Windows：双击 `uninstall.bat`。脚本会停止助手、删除开机启动项和助手文件。
+1. 右键托盘图标 → **「退出」**。
+2. 如果开过「开机自启」，先在菜单里取消它。
+3. 删除解压出来的文件夹。
+4. 到 `chrome://extensions/`（或对应浏览器的扩展管理页）移除「Bili 下载器」。
 
-Linux：
-
-```bash
-./uninstall.sh
-```
-
-脚本会停止自启动进程，删除助手和临时文件。
-卸载完成后，到 `chrome://extensions/`（或对应浏览器的扩展管理页）移除「Bili 下载器」。
+如果之前运行过脚本安装（Linux `./install.sh`），可以用 `./uninstall.sh` 清理
+`~/.local/share/bili-downloader` 和自启动文件。
 
 ## 说明
 

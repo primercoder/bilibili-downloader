@@ -1,7 +1,10 @@
 package main
 
+// Shared platform helpers. The parts that must differ per OS live in
+// folder_windows.go / folder_other.go (known folders + opening a folder) and
+// picker_windows.go / picker_other.go (folder picker) and notify_*.go.
+
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -29,67 +32,10 @@ func logf(format string, args ...any) {
 // redirected folders on Windows and XDG settings on Linux.
 func defaultDownloadDir() string {
 	home, _ := os.UserHomeDir()
-	switch runtime.GOOS {
-	case "windows":
-		if dir := windowsKnownFolder(); dir != "" {
-			return dir
-		}
-		return filepath.Join(home, "Downloads")
-	case "darwin":
-		return filepath.Join(home, "Downloads")
-	default:
-		if configured := xdgDownloadDir(); configured != "" {
-			return configured
-		}
-		return filepath.Join(home, "Downloads")
+	if dir := platformDownloadDir(); dir != "" {
+		return dir
 	}
-}
-
-func xdgDownloadDir() string {
-	home, _ := os.UserHomeDir()
-	data, err := os.ReadFile(filepath.Join(home, ".config", "user-dirs.dirs"))
-	if err != nil {
-		return ""
-	}
-	for _, line := range strings.Split(string(data), "\n") {
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "XDG_DOWNLOAD_DIR=") {
-			continue
-		}
-		value := strings.Trim(strings.TrimPrefix(line, "XDG_DOWNLOAD_DIR="), `"`)
-		value = strings.ReplaceAll(value, "$HOME", home)
-		value = os.ExpandEnv(value)
-		return value
-	}
-	return ""
-}
-
-func windowsRoot() string {
-	if root := os.Getenv("SystemRoot"); root != "" {
-		return root
-	}
-	return `C:\Windows`
-}
-
-func windowsPowerShell() string {
-	return filepath.Join(windowsRoot(), "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
-}
-
-func windowsExplorer() string {
-	return filepath.Join(windowsRoot(), "explorer.exe")
-}
-
-func windowsKnownFolder() string {
-	script := `[Console]::OutputEncoding=[Text.Encoding]::UTF8; ` +
-		`$p=@("$env:USERPROFILE\Downloads"); ` +
-		`try{$k=Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders" -ErrorAction Stop; ` +
-		`$v=$k."{374DE290-123F-4565-9164-39C4925E467B}"; if($v){$p=@([Environment]::ExpandEnvironmentVariables($v))}}catch{}; ` +
-		`[Console]::Write($p[0])`
-	out, err := exec.Command(windowsPowerShell(), "-NoProfile", "-NonInteractive", "-Command", script).Output()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(out))
+	return filepath.Join(home, "Downloads")
 }
 
 // safeName makes a title safe for Windows, macOS and Linux filesystems.
@@ -134,89 +80,9 @@ func uniquePath(path string) string {
 }
 
 // chooseDirectory opens a native folder picker. Returns "" when the user
-// cancelled. No third-party tools required: Windows uses PowerShell,
-// Linux tries zenity/kdialog and falls back to a Tk dialog via python3.
+// cancelled; the caller treats that as "keep the current value".
 func chooseDirectory() (string, error) {
-	initial := defaultDownloadDir()
-	switch runtime.GOOS {
-	case "windows":
-		powershell := windowsPowerShell()
-		if _, err := os.Stat(powershell); err != nil {
-			return "", fmt.Errorf("找不到 Windows PowerShell：%s", powershell)
-		}
-		// Use absolute system paths so this works whether the helper was started
-		// by the login item or manually. The hidden topmost owner form makes the
-		// dialog appear in front of the browser (the old version looked
-		// unresponsive because it could open behind the window).
-		script := `Add-Type -AssemblyName System.Windows.Forms; ` +
-			`$owner=New-Object System.Windows.Forms.Form; ` +
-			`$owner.Text='Bili 下载器'; ` +
-			`$owner.TopMost=$true; ` +
-			`$owner.ShowInTaskbar=$false; ` +
-			`$owner.FormBorderStyle='FixedToolWindow'; ` +
-			`$owner.StartPosition='CenterScreen'; ` +
-			`$owner.Opacity=0; ` +
-			`$owner.Show(); ` +
-			`$d=New-Object System.Windows.Forms.FolderBrowserDialog; ` +
-			`$d.Description='选择 Bili 下载器保存位置'; ` +
-			`$d.SelectedPath=$env:INITIAL_DIR; ` +
-			`$d.ShowNewFolderButton=$true; ` +
-			`$result=$d.ShowDialog($owner); ` +
-			`$owner.Close(); ` +
-			`if($result -eq [System.Windows.Forms.DialogResult]::OK){` +
-			`[Console]::OutputEncoding=[Text.Encoding]::UTF8; [Console]::Write($d.SelectedPath)}`
-		cmd := exec.Command(powershell, "-NoProfile", "-STA", "-ExecutionPolicy", "Bypass", "-Command", script)
-		cmd.Env = append(os.Environ(), "INITIAL_DIR="+initial)
-		hideWindow(cmd)
-		out, err := cmd.Output()
-		if err != nil {
-			return "", fmt.Errorf("无法打开文件夹选择器：%v", err)
-		}
-		return strings.TrimSpace(string(out)), nil
-	case "darwin":
-		script := `POSIX path of (choose folder with prompt "选择 Bili 下载器保存位置" default location POSIX file ` + quoteApple(initial) + `)`
-		out, err := exec.Command("osascript", "-e", script).Output()
-		if err != nil {
-			return "", nil
-		}
-		return strings.TrimSpace(string(out)), nil
-	default:
-		if path, ok := which("zenity"); ok {
-			cmd := exec.Command(path, "--file-selection", "--directory",
-				"--title=选择 Bili 下载器保存位置", "--filename="+withTrailingSep(initial))
-			out, err := cmd.Output()
-			if err != nil {
-				return "", nil
-			}
-			return strings.TrimSpace(string(out)), nil
-		}
-		if path, ok := which("kdialog"); ok {
-			cmd := exec.Command(path, "--getexistingdirectory", initial, "--title", "选择 Bili 下载器保存位置")
-			out, err := cmd.Output()
-			if err != nil {
-				return "", nil
-			}
-			return strings.TrimSpace(string(out)), nil
-		}
-		if path, ok := which("python3"); ok {
-			script := `import tkinter as tk, sys
-from tkinter import filedialog
-root = tk.Tk(); root.withdraw()
-print(filedialog.askdirectory(initialdir=sys.argv[1], title="选择 Bili 下载器保存位置"))
-`
-			cmd := exec.Command(path, "-c", script, initial)
-			out, err := cmd.Output()
-			if err != nil {
-				return "", nil
-			}
-			return strings.TrimSpace(string(out)), nil
-		}
-		return "", fmt.Errorf("未找到图形文件夹选择器，请直接在输入框里填写路径")
-	}
-}
-
-func quoteApple(value string) string {
-	return `"` + strings.ReplaceAll(value, `"`, `\"`) + `"`
+	return pickFolder("选择 Bili 下载器保存位置")
 }
 
 func withTrailingSep(path string) string {
@@ -234,61 +100,6 @@ func which(name string) (string, bool) {
 	return path, true
 }
 
-// openFolder reveals a finished download in the platform file manager.
-func openFolder(path string) error {
-	if path == "" {
-		return nil
-	}
-	absolute, err := filepath.Abs(path)
-	if err != nil {
-		return fmt.Errorf("无法解析文件路径：%v", err)
-	}
-	info, err := os.Stat(absolute)
-	if err != nil {
-		return fmt.Errorf("文件或文件夹不存在：%s", absolute)
-	}
-	path = absolute
-	target := path
-	if !info.IsDir() {
-		target = filepath.Dir(path)
-	}
-	switch runtime.GOOS {
-	case "windows":
-		// Do NOT set CREATE_NO_WINDOW here: explorer.exe can silently do
-		// nothing when launched that way. Also use /select for files so the
-		// finished video is highlighted, not just its folder.
-		explorer := windowsExplorer()
-		if _, err := os.Stat(explorer); err != nil {
-			explorer = "explorer.exe"
-		}
-		args := []string{target}
-		if !info.IsDir() {
-			args = []string{"/select," + target}
-		}
-		cmd := exec.Command(explorer, args...)
-		if err := cmd.Start(); err != nil {
-			return fmt.Errorf("无法启动文件管理器：%v", err)
-		}
-		return nil
-	case "darwin":
-		return exec.Command("open", target).Start()
-	default:
-		for _, name := range []string{"xdg-open", "gio"} {
-			if bin, ok := which(name); ok {
-				args := []string{target}
-				if name == "gio" {
-					args = []string{"open", target}
-				}
-				return exec.Command(bin, args...).Start()
-			}
-		}
-	}
-	return nil
-}
-
-// hideWindow is defined per-platform: hide_windows.go sets CREATE_NO_WINDOW,
-// hide_other.go is a no-op.
-
 func defaultsMessage() map[string]any {
 	return map[string]any{
 		"type":        "defaults",
@@ -298,6 +109,7 @@ func defaultsMessage() map[string]any {
 		"muxer":       "builtin",
 		"ffmpeg":      hasFFmpeg(),
 		"arch":        runtime.GOARCH,
+		"version":     version,
 	}
 }
 
@@ -317,20 +129,4 @@ func statusFilePath() string {
 		base = os.TempDir()
 	}
 	return filepath.Join(base, "bili-downloader", "state.json")
-}
-
-func writeStatusSnapshot(snapshot map[string]any) {
-	path := statusFilePath()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return
-	}
-	data, err := json.Marshal(snapshot)
-	if err != nil {
-		return
-	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return
-	}
-	_ = os.Rename(tmp, path)
 }

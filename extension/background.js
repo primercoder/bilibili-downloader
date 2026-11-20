@@ -329,7 +329,7 @@ async function hostRequest(path, options = {}) {
 
   let base = await discoverHost();
   if (!base) {
-    throw new Error("本地助手未运行。请先启动 Bili 下载器助手（安装脚本会设置开机启动）。");
+    throw new Error("本地助手未运行。请双击运行 host\\bili-host.exe（Linux 运行 host/bili-host-linux-*）。");
   }
   try {
     return await execute(base);
@@ -776,7 +776,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           return {
             ok: false,
             error: `本地助手未运行：${error?.message || String(error)}`,
-            hint: "安装脚本会把助手设置为开机启动；也可以手动运行 bili-host serve。",
+            hint: "双击 host\\bili-host.exe 启动助手；托盘菜单里可以打开「开机自启」。",
           };
         }
       }
@@ -827,7 +827,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           return {
             ok: false,
             error: "本地助手连接失败：" + (error?.message || String(error)),
-            hint: "请确认本地助手正在运行，或重新运行安装脚本。",
+            hint: "请确认系统托盘里有 Bili 下载器图标；没有就双击 host\\bili-host.exe。",
           };
         }
         ensureHostEvents();

@@ -16,8 +16,13 @@
 | `native_host/mux.go` | 内置 MP4 重排引擎（fMP4 → progressive MP4） |
 | `native_host/verify.go` | 成品结构校验 |
 | `native_host/stream.go` | 流地址校验（HTTPS 边界） |
-| `native_host/platform.go` | 两平台路径、文件夹选择器、打开目录 |
-| `native_host/hide_windows.go` / `hide_other.go` | 子进程是否隐藏窗口 |
+| `native_host/platform.go` | 共享路径工具、默认下载目录入口、`safeName` |
+| `native_host/tray.go` | 托盘应用：图标状态、菜单、退出时取消任务 |
+| `native_host/main.go` | 命令行入口：默认启动托盘，也支持 serve / status / autostart |
+| `native_host/folder_windows.go` / `folder_other.go` | 默认下载目录、打开所在文件夹 |
+| `native_host/picker_windows.go` / `picker_other.go` | 系统文件夹选择器 |
+| `native_host/autostart_windows.go` / `autostart_other.go` | 开机自启的读写 |
+| `native_host/notify_windows.go` / `notify_other.go` | 无控制台时的提示方式 |
 
 ---
 
@@ -408,43 +413,88 @@ ftyp | moov | sidx | (moof + mdat) × N
 
 ---
 
-## 7. 平台差异
+## 7. 桌面形态与平台差异
 
-### 7.1 路径与启动
+### 7.1 为什么是托盘应用
+
+助手不能是"双击后留一个黑窗口"的命令行程序：用户装完就不该再看见它，但又要能确认它在跑、能打开下载目录、能退出。
+
+因此助手是一个常驻托盘的后台程序：
+
+- Windows 构建带 `-H=windowsgui`，双击不会出现控制台窗口
+- 启动后绑定本地端口，并在系统托盘区显示图标
+- 托盘图标颜色就是状态：粉色=空闲、蓝色=下载中、橙色=合成/校验
+- 左键、右键都打开同一个菜单
+
+菜单内容：
+
+| 项 | 行为 |
+| --- | --- |
+| 状态：空闲 / 下载中 42% / 合成中 | 只读显示 |
+| 端口：47821 | 只读显示，方便排查 |
+| 打开下载文件夹 | 调用平台文件管理器 |
+| 开机自启（勾选） | 直接读写当前用户的自启动配置 |
+| 退出 | 取消正在跑的任务后退出，避免留下半截临时文件 |
+
+### 7.2 启动入口
+
+| 命令 | 行为 |
+| --- | --- |
+| 无参数 / `tray` | 启动服务 + 托盘（双击时的默认行为） |
+| `serve` | 只启动服务，前台阻塞，无托盘 |
+| `status` | 打印助手是否在运行、端口、健康检查地址 |
+| `autostart on/off/status` | 脚本化地开关开机自启 |
+| `default-dir` / `pick-dir` / `open <path>` | 单次工具命令 |
+
+单实例：`startServer` 先 `findRunningHost()` 扫端口，已在运行就直接提示"已在运行"并退出，不会起第二个进程。
+
+### 7.3 路径与开机自启
 
 | 项目 | Windows | Linux |
 | --- | --- | --- |
-| 助手位置 | `%LOCALAPPDATA%\BiliDownloader\bili-host.exe` | `~/.local/share/bili-downloader/bili-host` |
-| 开机启动 | `start-helper.vbs` + `HKCU\Software\...\Run`，由 `wscript.exe` 隐藏启动 | `~/.config/autostart/bili-downloader.desktop` |
-| 默认下载目录 | 注册表 `User Shell Folders` 的 `{374DE290-...}`，尊重"下载"被重定向 | `~/.config/user-dirs.dirs` 的 `XDG_DOWNLOAD_DIR` |
+| 运行位置 | 解压目录里的 `host\bili-host.exe`（不需要安装） | 解压目录里的 `host/bili-host-linux-*` |
+| 开机自启 | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` 值 `BiliDownloader` | `~/.config/autostart/bili-downloader.desktop` |
+| 默认下载目录 | `SHGetKnownFolderPath(FOLDERID_Downloads)`，尊重"下载"被重定向 | `~/.config/user-dirs.dirs` 的 `XDG_DOWNLOAD_DIR` |
 
-两者都失败时退回 `~/Downloads`。
+Windows 侧原先通过 PowerShell 读注册表，现在直接调用 shell32：少一个子进程，也不再受执行策略影响。两者都失败时退回 `~/Downloads`。
 
-### 7.2 文件夹选择器
+### 7.4 文件夹选择器
 
 | 平台 | 实现 |
 | --- | --- |
-| Windows | 绝对路径调用 `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe` + `FolderBrowserDialog`，并创建一个置顶的隐藏 owner form |
+| Windows | `SHBrowseForFolderW` + `SHGetPathFromIDListW`，在锁定的 OS 线程上以 STA 初始化 COM |
 | Linux | 依次尝试 `zenity` → `kdialog` → `python3 -tkinter` |
+| macOS | `osascript` 的 `choose folder` |
 
-Windows 的两个细节是必需的：
+Windows 侧换掉 PowerShell 的原因很实际：助手由托盘/登录项启动，子 PowerShell 在这种环境里经常直接以非零码退出，用户只看到"无法打开文件夹选择器"。原生的 shell32 调用没有这个问题。
 
-- 用绝对路径而不是依赖 PATH —— 由登录项启动的进程环境可能很精简
-- 用置顶的隐藏 owner form —— 否则对话框可能出现在浏览器窗口**后面**，用户看起来就像"按钮没反应"
+对话框的 owner 取自 `GetForegroundWindow()`（通常就是浏览器），因此对话框是模态的，不会跑到浏览器后面去。picker 用互斥锁串行，快速点两次不会开出两个窗口。
 
-### 7.3 打开所在文件夹
+页面上的"选择"按钮不再受 6 秒请求超时限制：选文件夹本身可能需要很久，超时由用户关闭对话框决定。
+
+### 7.5 打开所在文件夹
 
 | 平台 | 实现 |
 | --- | --- |
-| Windows | `%SystemRoot%\explorer.exe`；目标是文件时用 `/select,<绝对路径>` 直接定位并高亮，且**不能**设置 `CREATE_NO_WINDOW`（否则 Explorer 可能什么都不做） |
+| Windows | `%SystemRoot%\explorer.exe`；目标是文件时用 `/select,<绝对路径>` 定位并高亮 |
 | Linux | `xdg-open` 或 `gio open` |
 | macOS | `open` |
 
-路径先 `filepath.Abs` 再 `os.Stat`，不存在时返回明确错误，面板会把原因显示出来而不是静默失败。
+Windows 有两个必须遵守的点：
 
-### 7.4 子进程窗口
+- **不能**给 explorer 设 `CREATE_NO_WINDOW`，那样它会静默什么都不做（这正是"按钮没反应"的直接原因）
+- 用 `/select,` 而不是只打开父目录，用户能立刻看到成品文件
 
-`hide_windows.go` 用 `syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}` 避免 PowerShell 弹黑框。该设置只用于文件夹选择器，**不用于 Explorer**。
+路径先 `filepath.Abs` 再 `os.Stat`，不存在时返回明确错误，面板会显示原因而不是静默失败。
+
+### 7.6 无控制台时如何提示
+
+Windows GUI 构建没有 stdout，因此提示分两条路：
+
+- `notify_windows.go`：`MessageBoxW`，用于"助手已在运行"、"服务已启动，端口 X"、`--help`
+- `notify_other.go`：写日志 + stdout
+
+托盘菜单里的操作反馈（例如"无法打开文件夹：…"、"已设置开机自启"）通过在菜单里临时插入一行提示实现，6 秒后自动隐藏。
 
 ---
 
@@ -456,7 +506,7 @@ Windows 的两个细节是必需的：
 | 本地 HTTP | 只监听 `127.0.0.1`；CORS 只允许固定扩展 ID 的 origin；除 `/health` 与 `/events` 外的请求要求 `X-Bili-Client` 头 |
 | 媒体地址 | 助手只接受 `https://`，回环地址仅用于测试，拒绝 `file://` 等协议 |
 | 文件路径 | 标题经过 `safeName` 清洗，去掉 `/\:*?"<>|` 与 Windows 保留名，禁止路径穿越 |
-| 命令执行 | 助手不接受任意 shell 命令，只内置"选文件夹"和"打开目录"两种动作 |
+| 命令执行 | 助手不接受任意 shell 命令：文件夹选择走系统 API，打开目录只用固定的 explorer/xdg-open 参数 |
 | 日志 | 只写系统临时目录，不含 URL 或登录信息 |
 
 ---
@@ -490,3 +540,4 @@ node tests/browser_drive.mjs
 | 试看 / 地区 / 会员限制 | 由 PGC 接口的 `is_preview`、`can_watch_reason` 决定，失败时按接口消息提示 |
 | 直播、付费课程 | 不属于当前支持范围 |
 | MV3 Service Worker 休眠 | 助手继续下载，但角标可能停在最后一帧，直到用户再打开面板触发对账 |
+| Linux 托盘图标 | 依赖桌面环境的 StatusNotifierItem；GNOME 默认需要 AppIndicator 扩展，没有图标时下载功能不受影响 |

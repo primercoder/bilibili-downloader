@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Bili 下载器 - Linux 本地助手安装脚本
 #
-# 助手是一个独立的本地 HTTP 服务，不再注册 Chrome Native Messaging。
-# 安装脚本会复制助手，并把它设置为当前用户开机启动。
+# 助手是一个托盘应用：启动后在 127.0.0.1 上监听端口，并常驻系统托盘。
+# 安装脚本只做两件事：复制助手、设置为登录时自动启动。
 set -o pipefail
 
 HELPER_DIR="$HOME/.local/share/bili-downloader"
@@ -46,13 +46,14 @@ info
 info "Bili 下载器 - 安装本地助手"
 info
 
-# 升级时先停掉旧实例；新的服务会重新启动。
+# 升级时先停掉旧实例（包括 2.0.x 时期的 systemd 服务）。
 if command -v systemctl >/dev/null 2>&1; then
   systemctl --user disable --now "$SERVICE_NAME" >/dev/null 2>&1 || true
   rm -f "$SERVICE_FILE"
   systemctl --user daemon-reload >/dev/null 2>&1 || true
 fi
-pkill -f "$BINARY serve" >/dev/null 2>&1 || true
+pkill -f "$BINARY" >/dev/null 2>&1 || true
+sleep 0.3
 
 mkdir -p "$HELPER_DIR" || die "无法创建 $HELPER_DIR"
 if ! install -m 755 "$SOURCE" "$BINARY" 2>/dev/null; then
@@ -60,21 +61,25 @@ if ! install -m 755 "$SOURCE" "$BINARY" 2>/dev/null; then
 fi
 ok "本地助手：$BINARY"
 
+# 助手自己也会写这个文件（托盘菜单里的「开机自启」），这里先写好，
+# 保证安装完立刻生效。
 mkdir -p "$AUTOSTART_DIR"
 cat > "$AUTOSTART_FILE" <<EOF
 [Desktop Entry]
 Type=Application
-Name=Bili Downloader Helper
-Exec="$BINARY" serve
+Name=Bili Downloader
+Comment=本地下载助手
+Exec="$BINARY"
 Terminal=false
 NoDisplay=true
 X-GNOME-Autostart-enabled=true
 EOF
-ok "已设置为桌面登录时自动启动"
+ok "已设置为登录后自动启动"
 
-# 从当前终端启动时继承 DISPLAY/WAYLAND_DISPLAY，文件夹选择器才能弹出窗口。
-nohup "$BINARY" serve >/dev/null 2>&1 &
-ok "本地助手已启动"
+# 从当前终端启动时继承 DISPLAY/WAYLAND_DISPLAY，托盘图标和文件夹选择器
+# 才能正常显示。
+nohup "$BINARY" >/dev/null 2>&1 &
+ok "本地助手已启动（托盘图标在系统托盘区）"
 
 info
 info "安装完成。接下来在浏览器中加载扩展："
@@ -83,8 +88,9 @@ info "  2. 打开右上角「开发者模式」"
 info "  3. 点「加载已解压的扩展程序」"
 info "  4. 选择：$EXT_DIR"
 info
-info "助手会在 127.0.0.1 的本地端口上监听，不需要浏览器注册或额外配置。"
-info "如果按钮或下载提示助手未运行，先确认 bili-host serve 正在运行。"
+info "助手会在 127.0.0.1 的本地端口（47821–47860）上监听，不需要浏览器注册或额外配置。"
+info "托盘图标：左键/右键都打开菜单，可查看状态、打开下载文件夹、开关开机自启、退出。"
+info "如果提示助手未运行，重新运行：$BINARY"
 info
 pause_exit
 exit 0

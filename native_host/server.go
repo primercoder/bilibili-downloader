@@ -19,6 +19,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -79,6 +80,7 @@ func (h *messageHub) sendMessage(message map[string]any) {
 			}
 		}
 	}
+	reportJobState(message)
 	if len(h.subscribers) == 0 {
 		return
 	}
@@ -241,19 +243,29 @@ func listenLocal() (net.Listener, int, error) {
 	return nil, 0, fmt.Errorf("本地端口 %d-%d 全部被占用", hostPortStart, hostPortStart+hostPortCount-1)
 }
 
-func serveHTTP() {
+// activeManager is the job manager of the running server. The tray uses it to
+// cancel transfers on exit so temporary files are cleaned up.
+var activeManager *jobManager
+
+// desktopPort holds the bound port for the tray menu.
+var desktopPort atomic.Int32
+
+// startServer binds the loopback port and starts serving in the background.
+// It returns the port so the tray can show it and the CLI can print it.
+func startServer() (int, error) {
 	if port := findRunningHost(); port != 0 {
-		logf("another host already listening on 127.0.0.1:%d; exiting", port)
-		return
+		logf("another host already listening on 127.0.0.1:%d", port)
+		return port, fmt.Errorf("本地助手已在运行（端口 %d）", port)
 	}
 	listener, port, err := listenLocal()
 	if err != nil {
 		logf("http host failed: %v", err)
-		return
+		return 0, err
 	}
 
 	hub := newMessageHub()
 	manager := newJobManager(hub)
+	activeManager = manager
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -373,8 +385,10 @@ func serveHTTP() {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	logf("http host listening on 127.0.0.1:%d", port)
-	fmt.Printf("Bili helper listening on http://127.0.0.1:%d\n", port)
-	if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
-		logf("http host stopped: %v", err)
-	}
+	go func() {
+		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
+			logf("http host stopped: %v", err)
+		}
+	}()
+	return port, nil
 }

@@ -30,7 +30,9 @@ cd native_host
 # problem on older distros, and no runtime to install.
 CGO_ENABLED=0 GOOS=linux  GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o "../dist/hosts/bili-host-linux-amd64" .
 CGO_ENABLED=0 GOOS=linux  GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o "../dist/hosts/bili-host-linux-arm64" .
-CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o "../dist/hosts/bili-host-windows-amd64.exe" .
+# -H=windowsgui is what stops a console window from flashing when the user
+# double-clicks the helper: the shipped build is a tray app, not a CLI.
+CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w -H=windowsgui" -o "../dist/hosts/bili-host-windows-amd64.exe" .
 cd ..
 chmod +x dist/hosts/bili-host-linux-amd64 dist/hosts/bili-host-linux-arm64
 ls -lh dist/hosts
@@ -57,7 +59,7 @@ STAGE=$(mktemp -d)
 DIR_NAME="${NAME}-windows-x64"
 mkdir -p "$STAGE/${DIR_NAME}"
 cp -r extension "$STAGE/${DIR_NAME}/"
-cp install.bat uninstall.bat install.ps1 uninstall.ps1 README.md "$STAGE/${DIR_NAME}/"
+cp README.md "$STAGE/${DIR_NAME}/"
 mkdir -p "$STAGE/${DIR_NAME}/host"
 cp dist/hosts/bili-host-windows-amd64.exe "$STAGE/${DIR_NAME}/host/bili-host.exe"
 # Convert Markdown to CRLF so Notepad renders it correctly.

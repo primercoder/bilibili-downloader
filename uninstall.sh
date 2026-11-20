@@ -26,7 +26,7 @@ info
 if command -v systemctl >/dev/null 2>&1; then
   systemctl --user disable --now "$SERVICE_NAME" >/dev/null 2>&1 || true
 fi
-pkill -f "$BINARY serve" >/dev/null 2>&1 || true
+pkill -f "$BINARY" >/dev/null 2>&1 || true
 rm -f "$SERVICE_FILE" "$AUTOSTART_FILE"
 if command -v systemctl >/dev/null 2>&1; then
   systemctl --user daemon-reload >/dev/null 2>&1 || true
