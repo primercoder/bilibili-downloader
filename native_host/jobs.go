@@ -247,6 +247,9 @@ func (m *jobManager) execute(ctx context.Context, job jobRequest) error {
 
 	directory := job.directory
 	if directory == "" {
+		directory = rememberedDownloadDir()
+	}
+	if directory == "" {
 		directory = defaultDownloadDir()
 	}
 	directory = expandHome(directory)
@@ -256,6 +259,10 @@ func (m *jobManager) execute(ctx context.Context, job jobRequest) error {
 	if err := ensureWritable(directory); err != nil {
 		return err
 	}
+	// The job's directory is now authoritative (the extension saves it too, but
+	// the tray has no storage of its own). Recording it here also covers jobs
+	// started before the picker existed.
+	rememberDownloadDir(directory)
 
 	base := safeName(job.title, 120)
 	if base == "" {
@@ -316,10 +323,10 @@ func (m *jobManager) execute(ctx context.Context, job jobRequest) error {
 		fraction := float64(videoDone+audioDone) / float64(total)
 		return 4 + 88*fraction
 	}
-	forward := func(stage string) progressFunc {
+	forward := func(isVideo bool) progressFunc {
 		return func(done, total int64, speed float64, detail string) {
 			counters.Lock()
-			if strings.Contains(stage, "视频") {
+			if isVideo {
 				videoDone, videoTotal, videoSpeed = done, total, speed
 			} else {
 				audioDone, audioTotal, audioSpeed = done, total, speed
@@ -328,7 +335,11 @@ func (m *jobManager) execute(ctx context.Context, job jobRequest) error {
 			sumTotal := videoTotal + audioTotal
 			sumSpeed := videoSpeed + audioSpeed
 			counters.Unlock()
-			m.progress(job.id, stage, combinedPercent(), sumDone, sumTotal, sumSpeed, detail)
+			// Both streams report on their own 500ms timers. Sending the
+			// per-stream label made the panel flip between "下载视频流" and
+			// "下载音频流" every half second. The combined progress is what the
+			// user cares about, so the stage stays fixed for the whole transfer.
+			m.progress(job.id, "下载中", combinedPercent(), sumDone, sumTotal, sumSpeed, detail)
 		}
 	}
 
@@ -345,9 +356,9 @@ func (m *jobManager) execute(ctx context.Context, job jobRequest) error {
 			}
 		}()
 	}
-	launch(streamTask{label: "视频", stream: job.video, target: videoPath, referer: referer, progress: forward("下载视频流")})
+	launch(streamTask{label: "视频", stream: job.video, target: videoPath, referer: referer, progress: forward(true)})
 	if hasAudio {
-		launch(streamTask{label: "音频", stream: job.audio, target: audioPath, referer: referer, progress: forward("下载音频流")})
+		launch(streamTask{label: "音频", stream: job.audio, target: audioPath, referer: referer, progress: forward(false)})
 	}
 	completed.Wait()
 
@@ -369,7 +380,7 @@ func (m *jobManager) execute(ctx context.Context, job jobRequest) error {
 		}
 	}
 
-	m.progress(job.id, "合成 MP4", 94, 0, 0, 0, "内置合成引擎 · 不重新编码")
+	m.progress(job.id, "合并中", 94, 0, 0, 0, "内置合成引擎 · 不重新编码")
 
 	partial := filepath.Join(directory, "."+job.id+".partial.mp4")
 	if hasAudio {
@@ -393,7 +404,7 @@ func (m *jobManager) execute(ctx context.Context, job jobRequest) error {
 		}
 	}
 
-	m.progress(job.id, "校验文件", 98, 0, 0, 0, "检查 moov 索引与时长")
+	m.progress(job.id, "合并中", 98, 0, 0, 0, "检查 moov 索引与时长")
 	probeResult, err := verifyMP4(partial)
 	if err != nil {
 		_ = os.Remove(partial)

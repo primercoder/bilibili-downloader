@@ -12,8 +12,8 @@ import (
 )
 
 var (
-	user32Lazy        = syscall.NewLazyDLL("user32.dll")
-	procMessageBoxW   = user32Lazy.NewProc("MessageBoxW")
+	user32Lazy      = syscall.NewLazyDLL("user32.dll")
+	procMessageBoxW = user32Lazy.NewProc("MessageBoxW")
 )
 
 const mbIconInformation = 0x00000040

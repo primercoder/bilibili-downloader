@@ -74,7 +74,7 @@ func reportJobState(message map[string]any) {
 			percent = 100
 		}
 		trayPercent.Store(int32(percent))
-		if strings.Contains(stage, "合成") || strings.Contains(stage, "校验") {
+		if strings.Contains(stage, "合并") || strings.Contains(stage, "合成") || strings.Contains(stage, "校验") {
 			trayState.Store(trayMuxing)
 		} else {
 			trayState.Store(trayDownloading)
@@ -110,6 +110,11 @@ func trayIcon(state int32) []byte {
 }
 
 func trayStatusText(state int32, percent int32, stage string) string {
+	// Exactly three states, as reported by users: 空闲 / 下载中 / 合成中.
+	// The per-stream stage labels are gone (issue: the panel kept flipping
+	// between 视频/音频), so the stage suffix would only ever duplicate the
+	// fixed "下载中" wording.
+	_ = stage
 	switch state {
 	case trayMuxing:
 		return "合成中"
@@ -117,13 +122,20 @@ func trayStatusText(state int32, percent int32, stage string) string {
 		if percent >= 0 {
 			return fmt.Sprintf("下载中 %d%%", percent)
 		}
-		if stage != "" {
-			return "下载中 · " + stage
-		}
 		return "下载中"
 	default:
 		return "空闲"
 	}
+}
+
+// trayDownloadDir is the directory the tray's "打开下载文件夹" opens: the last
+// directory the user picked when there is one, otherwise the system Downloads
+// folder (which is also the first-run default).
+func trayDownloadDir() string {
+	if dir := rememberedDownloadDir(); dir != "" {
+		return dir
+	}
+	return defaultDownloadDir()
 }
 
 // runDesktop starts the local server and then blocks on the tray event loop.
@@ -166,7 +178,7 @@ func trayReady() {
 		for {
 			select {
 			case <-folderItem.ClickedCh:
-				if err := openFolder(defaultDownloadDir()); err != nil {
+				if err := openFolder(trayDownloadDir()); err != nil {
 					showHint("无法打开文件夹：" + err.Error())
 				}
 			case <-autoItem.ClickedCh:

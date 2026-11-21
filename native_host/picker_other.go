@@ -19,11 +19,14 @@ import (
 // pickerMu serialises dialogs so two rapid clicks cannot open two windows.
 var pickerMu sync.Mutex
 
-func pickFolder(title string) (string, error) {
+func pickFolder(title, initialDir string) (string, error) {
 	pickerMu.Lock()
 	defer pickerMu.Unlock()
 
-	initial := defaultDownloadDir()
+	initial := initialDir
+	if initial == "" {
+		initial = defaultDownloadDir()
+	}
 	switch runtime.GOOS {
 	case "darwin":
 		script := `POSIX path of (choose folder with prompt "` + title +

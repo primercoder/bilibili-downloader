@@ -5,12 +5,14 @@ package main
 // picker_windows.go / picker_other.go (folder picker) and notify_*.go.
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 )
@@ -80,9 +82,14 @@ func uniquePath(path string) string {
 }
 
 // chooseDirectory opens a native folder picker. Returns "" when the user
-// cancelled; the caller treats that as "keep the current value".
+// cancelled; the caller treats that as "keep the current value". The dialog
+// starts in the last used directory when there is one.
 func chooseDirectory() (string, error) {
-	return pickFolder("选择 Bili 下载器保存位置")
+	initial := rememberedDownloadDir()
+	if initial == "" {
+		initial = defaultDownloadDir()
+	}
+	return pickFolder("选择 Bili 下载器保存位置", initial)
 }
 
 func withTrailingSep(path string) string {
@@ -101,11 +108,15 @@ func which(name string) (string, bool) {
 }
 
 func defaultsMessage() map[string]any {
+	dir := rememberedDownloadDir()
+	if dir == "" {
+		dir = defaultDownloadDir()
+	}
 	return map[string]any{
 		"type":        "defaults",
 		"state":       "defaults",
 		"platform":    runtime.GOOS,
-		"downloadDir": defaultDownloadDir(),
+		"downloadDir": dir,
 		"muxer":       "builtin",
 		"ffmpeg":      hasFFmpeg(),
 		"arch":        runtime.GOARCH,
@@ -119,10 +130,79 @@ func hasFFmpeg() bool {
 	return ffmpeg && ffprobe
 }
 
+// appSettings persists the state that must survive restarts and be shared with
+// the tray: the last download directory the user picked. First run has no file,
+// and every caller then falls back to the system Downloads folder.
+type appSettings struct {
+	DownloadDir string `json:"downloadDir"`
+}
+
+var settingsMu sync.Mutex
+
+func readSettingsFile(path string) appSettings {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return appSettings{}
+	}
+	var s appSettings
+	if json.Unmarshal(data, &s) != nil {
+		return appSettings{}
+	}
+	return s
+}
+
+func writeSettingsFile(path string, s appSettings) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(s, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
+}
+
+// rememberedDownloadDir returns the last directory the user picked, provided it
+// still exists. Empty when there is no memory yet.
+func rememberedDownloadDir() string {
+	settingsMu.Lock()
+	defer settingsMu.Unlock()
+	dir := readSettingsFile(statusFilePath()).DownloadDir
+	if dir == "" {
+		return ""
+	}
+	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+		return ""
+	}
+	return dir
+}
+
+// rememberDownloadDir records the directory for /defaults and the tray. It is
+// called when the user picks one and when a job actually starts downloading.
+func rememberDownloadDir(dir string) {
+	if dir == "" {
+		return
+	}
+	if abs, err := filepath.Abs(dir); err == nil {
+		dir = abs
+	}
+	settingsMu.Lock()
+	defer settingsMu.Unlock()
+	path := statusFilePath()
+	s := readSettingsFile(path)
+	if s.DownloadDir == dir {
+		return
+	}
+	s.DownloadDir = dir
+	if err := writeSettingsFile(path, s); err != nil {
+		logf("cannot persist download dir: %v", err)
+	}
+}
+
 func statusFilePath() string {
-	dir := os.Getenv("BILI_DOWNLOADER_STATE")
-	if dir != "" {
-		return dir
+	if dir := os.Getenv("BILI_DOWNLOADER_STATE"); dir != "" {
+		// Test / power-user override: the env var names a directory.
+		return filepath.Join(dir, "state.json")
 	}
 	base, err := os.UserCacheDir()
 	if err != nil {

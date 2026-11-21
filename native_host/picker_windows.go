@@ -51,15 +51,39 @@ var (
 	procGetForegroundWindow  = browseUser32.NewProc("GetForegroundWindow")
 	procSHBrowseForFolderW   = browseShell32.NewProc("SHBrowseForFolderW")
 	procSHGetPathFromIDListW = browseShell32.NewProc("SHGetPathFromIDListW")
+	procSHParseDisplayName   = browseShell32.NewProc("SHParseDisplayName")
 	procCoTaskMemFree        = browseOle32.NewProc("CoTaskMemFree")
 	procCoInitializeEx       = browseOle32.NewProc("CoInitializeEx")
 	procCoUninitialize       = browseOle32.NewProc("CoUninitialize")
 )
 
-// pickFolder shows the shell's folder browser on the current thread. The dialog
-// is modal to the desktop, so it must run on a locked OS thread with COM
-// initialized in single-threaded apartment mode.
-func pickFolder(title string) (string, error) {
+// pidlFromPath converts a filesystem path to an item-ID list for the dialog's
+// root. Returns 0 when the shell cannot resolve the path; the caller then
+// starts at the desktop, which is an acceptable fallback.
+func pidlFromPath(path string) uintptr {
+	pathPtr, err := syscall.UTF16PtrFromString(path)
+	if err != nil {
+		return 0
+	}
+	const sfgaoContainer = 0x00000008 // attributes: unused here, API requires the out param
+	var attrs uint32
+	var pidl *uint16
+	procSHParseDisplayName.Call(
+		uintptr(unsafe.Pointer(pathPtr)),
+		0,
+		uintptr(unsafe.Pointer(&attrs)),
+		sfgaoContainer,
+		uintptr(unsafe.Pointer(&pidl)),
+	)
+	_ = attrs
+	return uintptr(unsafe.Pointer(pidl))
+}
+
+// pickFolder shows the shell's folder browser on the current thread, starting
+// in initialDir when that exists. The dialog is modal to the desktop, so it
+// must run on a locked OS thread with COM initialized in single-threaded
+// apartment mode.
+func pickFolder(title, initialDir string) (string, error) {
 	pickerMu.Lock()
 	defer pickerMu.Unlock()
 
@@ -87,9 +111,23 @@ func pickFolder(title string) (string, error) {
 	// it is modal to it and cannot end up hidden behind it.
 	owner, _, _ := procGetForegroundWindow.Call()
 
+	// pidlRoot is a PIDL, not a plain path: walk down from the desktop item by
+	// item, ignoring whatever part the shell does not expose. If it cannot be
+	// resolved the dialog just starts at the desktop, which is fine.
+	var rootPIDL uintptr
+	if initialDir != "" {
+		rootPIDL = pidlFromPath(initialDir)
+	}
+	defer func() {
+		if rootPIDL != 0 {
+			procCoTaskMemFree.Call(rootPIDL)
+		}
+	}()
+
 	display := make([]uint16, maxPathWide)
 	info := browseInfo{
 		hwndOwner:      owner,
+		pidlRoot:       rootPIDL,
 		pszDisplayName: &display[0],
 		lpszTitle:      titlePtr,
 		ulFlags:        bifReturnOnlyFSDirs | bifNewDialogStyle,

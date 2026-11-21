@@ -355,6 +355,12 @@ func startServer() (int, error) {
 			writeError(w, err)
 			return
 		}
+		// A cancelled dialog returns "", which must NOT overwrite the
+		// remembered directory: the popup closes while the native dialog is
+		// open, so this endpoint can also be hit after the panel is gone.
+		if path != "" {
+			rememberDownloadDir(path)
+		}
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "path": path})
 	})
 	mux.HandleFunc("/open-folder", func(w http.ResponseWriter, r *http.Request) {

@@ -22,11 +22,11 @@ import (
 )
 
 var (
-	shell32Lazy           = syscall.NewLazyDLL("shell32.dll")
-	procSHGetKnownFolder  = shell32Lazy.NewProc("SHGetKnownFolderPath")
-	procFreeKnownFolder   = shell32Lazy.NewProc("CoTaskMemFree")
-	knownFolderOnce       sync.Once
-	knownFolderPath       string
+	shell32Lazy          = syscall.NewLazyDLL("shell32.dll")
+	procSHGetKnownFolder = shell32Lazy.NewProc("SHGetKnownFolderPath")
+	procFreeKnownFolder  = shell32Lazy.NewProc("CoTaskMemFree")
+	knownFolderOnce      sync.Once
+	knownFolderPath      string
 )
 
 // folderIDDownloads is FOLDERID_Downloads
