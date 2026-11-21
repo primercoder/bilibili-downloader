@@ -89,10 +89,12 @@ class Session {
 
 async function findExtensionId() {
   const targets = await jsonFetch(`${CDP}/json/list`);
+  // MV3 service workers go idle and vanish from the target list; leftover
+  // popup pages keep the chrome-extension:// URL, so scan both kinds.
   const candidates = [
     ...new Set(
       targets
-        .filter(t => t.type === "service_worker" && t.url.startsWith("chrome-extension://"))
+        .filter(t => (t.url || "").startsWith("chrome-extension://"))
         .map(t => t.url.split("/")[2]),
     ),
   ];
