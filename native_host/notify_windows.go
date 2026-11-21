@@ -32,9 +32,10 @@ func showMessage(title, text string) {
 }
 
 // notifyAlreadyRunning tells the user the helper is already up, instead of
-// leaving a second copy silently running.
+// leaving a second copy silently running. The error from startServer already
+// names the port, so the box just appends the instruction.
 func notifyAlreadyRunning(err error) {
-	showMessage("Bili 下载器", "本地助手已在运行，无需重复启动。\n\n"+err.Error())
+	showMessage("Bili 下载器", err.Error()+"，无需重复启动。")
 }
 
 // notifyListening reports the bound port. The GUI build has no console, so a

@@ -14,10 +14,10 @@ func showMessage(title, text string) {
 }
 
 // notifyAlreadyRunning is called when a second copy fails to bind the port.
-// The error message already says so, so only the reason is appended once.
+// The error already names the port, so only the instruction is appended.
 func notifyAlreadyRunning(err error) {
 	logf("already running: %v", err)
-	fmt.Printf("本地助手已在运行，无需重复启动（%v）\n", err)
+	fmt.Printf("%v，无需重复启动。\n", err)
 }
 
 // notifyListening prints the bound port.
